@@ -72,13 +72,15 @@ struct NowPlayingBar: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(alignment: .bottom) {
-                if showVisualizer {
-                    SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying,
-                                 isAirPlaying: player.isAirPlaying, gap: 2)
-                        .frame(height: 18)
-                }
+            .padding(.top, 8)
+            .padding(.bottom, showVisualizer ? 4 : 8)
+            // Its own row under the content, so it never overlaps the title.
+            if showVisualizer {
+                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying,
+                             isAirPlaying: player.isAirPlaying, gap: 2)
+                    .frame(height: 10)
+                    .padding(.horizontal)
+                    .padding(.bottom, 2)
             }
         }
         .background(.regularMaterial)
@@ -390,8 +392,9 @@ struct NowPlayingView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
-            if showAudioQuality, let quality = player.audioQuality {
-                Text(quality.summary)
+            // Always takes its line, so the layout doesn't hop when the value arrives.
+            if showAudioQuality {
+                Text(player.audioQuality?.summary ?? " ")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)

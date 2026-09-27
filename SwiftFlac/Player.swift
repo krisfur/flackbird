@@ -576,7 +576,6 @@ final class PlayerController {
         }
         nowPlaying = TrackMetadata()
         nowPlayingSource = nil
-        audioQuality = nil
         updateNowPlayingInfo()
         metadataTask = Task {
             let metadata = await metadataLoader(track)
@@ -589,7 +588,8 @@ final class PlayerController {
             #if os(iOS)
                 item.externalMetadata = externalMetadata(for: track)
             #endif
-            // After the metadata, so it never competes with loading the cover.
+            // After the metadata, so it never competes with loading the cover. The previous
+            // track's value stays until then, so the line updates in place.
             let quality = await qualityLoader(track.url)
             guard item === player.currentItem else { return }
             audioQuality = quality

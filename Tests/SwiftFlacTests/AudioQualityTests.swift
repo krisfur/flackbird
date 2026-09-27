@@ -55,5 +55,8 @@ struct AudioQualityTests {
         await gate.finish(AudioQuality(format: "FLAC", bitDepth: 24, sampleRate: 96000, kilobitsPerSecond: 2304))
         await Task.yield()
         #expect(player.audioQuality?.format == "MP3")
+        // A track change keeps the previous line until the new one loads, so nothing hops.
+        player.next()
+        #expect(player.audioQuality?.format == "MP3")
     }
 }
