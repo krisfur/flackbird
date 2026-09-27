@@ -19,12 +19,20 @@ Paste this into the "Notes for Review" field in App Store Connect. It exists bec
 >
 > Alternatively, connect the device to a Mac and drag any .flac, .mp3, .m4a, .wav, or .aiff file into the SwiftFlac folder under Files sharing in Finder.
 >
-> The app also accepts any folder on the device via Options (...) > Choose Folder. Each subfolder inside the chosen folder becomes a playlist.
+> On Mac:
+>
+> 1. Open the same link in Safari; the file downloads to Downloads.
+> 2. Open SwiftFlac, click the gear icon (Settings), then Choose Folder..., and pick Downloads.
+> 3. The track appears under All Tracks and Albums. Click it to play.
+>
+> The app also accepts any folder via the gear icon (Settings) > Choose Folder. Each subfolder inside the chosen folder becomes a playlist.
+>
+> Siri and Shortcuts: requests such as "Shuffle my library in SwiftFlac" or "Play <folder, album, or artist> in SwiftFlac" play music, and the same actions appear in the Shortcuts app. As with any app's shortcuts, Siri must first be turned on for SwiftFlac: open Settings (gear icon) > Siri & Shortcuts, which opens SwiftFlac's page in the Shortcuts app, tap the info (i) button at the top right, and turn on Siri.
 >
 > Notes on the app:
 >
 > - No account, no login, no purchases, no subscriptions. Everything is free.
-> - No network access whatsoever. The app works fully in airplane mode. The only link is the GitHub link in Options (...) > About, which opens Safari.
+> - No network access whatsoever. The app works fully in airplane mode. The only web link is the GitHub link in Settings (gear icon), which opens Safari.
 > - No data is collected or transmitted. No analytics, no tracking, no third-party SDKs.
 > - No permission prompts. The app reads only files you place in its own folder or a folder you explicitly pick.
 > - Background audio is used so playback continues when the screen locks, with standard Control Centre and lock screen controls.
@@ -49,7 +57,9 @@ The file is about 94 KB: a 5 second mono tone plus a 600x600 cover. The cover ma
 
 **Accessibility.** The transport, shuffle, repeat, and search-clear controls are icon-only, so VoiceOver announced the SF Symbol name. They now carry labels, with shuffle and repeat exposing their state as an accessibility value rather than folding it into the label.
 
-**Privacy policy.** Required for every app in App Store Connect, including apps that collect nothing. Served from this site at [privacy](privacy.md), so the published text lives with the code and cannot drift from it.
+**Privacy policy.** Required for every app in App Store Connect, including apps that collect nothing. Served from this site at [privacy](privacy.md), so the published text lives with the code and cannot drift from it. It covers the one on-device sharing there is: folder, album, and artist names given to the system for Siri and Shortcuts.
+
+**Siri and Shortcuts.** Built with App Intents, which need no entitlement and show no permission prompt. Siri phrases only work once the user turns on Siri for the app in the Shortcuts app, and apps cannot do that themselves, so the review notes walk through it and Settings links straight there.
 
 **Library refresh.** Not a store requirement, but it was the real reason the app looked untestable. The library only scanned at launch, so music added while the app sat in the background stayed invisible until a relaunch or a manual rescan, which reads as a broken app. It now rescans when the app returns to the foreground, gated behind a cheap fingerprint of the file tree so an unchanged library costs a directory walk instead of reopening every file.
 
@@ -57,4 +67,4 @@ The file is about 94 KB: a 5 second mono tone plus a 600x600 cover. The cover ma
 
 - A support URL. The GitHub repository serves.
 - App Privacy answers in App Store Connect: "Data Not Collected" throughout.
-- Screenshots for each device size being submitted.
+- Screenshots: the files in `screenshots/` are App Store sizes (`ios-*` for the 6.9-inch iPhone, `ipad-*` for the 13-inch iPad, `mac-*` for Mac), generated from a demo library by `take_screenshots.sh`.
