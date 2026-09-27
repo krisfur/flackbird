@@ -172,9 +172,18 @@ private struct SpectrumBars: View {
     let monitor: SpectrumMonitor
     let isPlaying: Bool
 
+    /// The tap sees audio before the hardware plays it: a little on the speaker, ~200 ms over Bluetooth.
+    private static var outputLatency: TimeInterval {
+        #if os(iOS)
+            AVAudioSession.sharedInstance().outputLatency
+        #else
+            0
+        #endif
+    }
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isPlaying)) { _ in
-            let levels = monitor.update(isPlaying: isPlaying)
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isPlaying)) { _ in
+            let levels = monitor.update(isPlaying: isPlaying, delay: Self.outputLatency)
             Canvas { context, size in
                 let gap: CGFloat = 3
                 let width = (size.width - gap * CGFloat(levels.count - 1)) / CGFloat(levels.count)
@@ -184,6 +193,8 @@ private struct SpectrumBars: View {
                     context.fill(Path(roundedRect: rect, cornerRadius: min(2, width / 2)), with: .color(.secondary.opacity(0.18)))
                 }
             }
+            .opacity(monitor.hasSignal ? 1 : 0)
+            .animation(.easeOut(duration: 0.3), value: monitor.hasSignal)
         }
         .opacity(isPlaying ? 1 : 0)
         .animation(.easeOut(duration: 0.4), value: isPlaying)
@@ -206,7 +217,7 @@ struct NowPlayingView: View {
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
     @AppStorage("showAudioQuality") private var showAudioQuality = true
-    @AppStorage("showVisualizer") private var showVisualizer = false
+    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = false
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -260,8 +271,6 @@ struct NowPlayingView: View {
             }
         }
         .background(AppBackground())
-        .onAppear { player.visualizerEnabled = showVisualizer }
-        .onChange(of: showVisualizer) { player.visualizerEnabled = showVisualizer }
         // Full resolution here - this is the one place artwork is shown big -
         // but decoded once per track, not on every tick of the scrubber.
         .task(id: ArtworkSource(track: player.nowPlayingSource, data: player.nowPlaying.artworkData)) {

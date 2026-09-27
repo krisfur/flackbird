@@ -6,11 +6,13 @@ import os
 /// Recent decoded audio, shared between a real-time audio tap and the UI. The
 /// tap side never allocates, retains, or blocks: it skips a buffer if the UI holds the lock.
 final class SpectrumBuffer: @unchecked Sendable {
-    static let capacity = 8192
+    /// Room for the analysis window plus Bluetooth-sized output latency.
+    static let capacity = 32768
 
     private struct State {
         var writeIndex = 0
         var written = 0
+        var sequence: UInt64 = 0
         var sampleRate: Double = 0
         var channels = 0
         var isUsable = false
@@ -33,15 +35,24 @@ final class SpectrumBuffer: @unchecked Sendable {
         state.deallocate()
     }
 
-    /// The newest `count` samples, oldest first; nil until enough audio has played.
-    func latest(_ count: Int) -> (samples: [Float], sampleRate: Double)? {
+    /// `count` samples ending `delay` seconds before the newest, oldest first, plus a
+    /// counter that advances whenever audio arrives. Nil until enough audio has played.
+    func latest(_ count: Int, delay: TimeInterval = 0) -> (samples: [Float], sampleRate: Double, sequence: UInt64)? {
         os_unfair_lock_lock(lock)
         defer { os_unfair_lock_unlock(lock) }
         let current = state.pointee
-        guard current.sampleRate > 0, current.written >= count, count <= Self.capacity else { return nil }
-        let start = (current.writeIndex - count + Self.capacity) % Self.capacity
+        guard current.sampleRate > 0, count > 0, current.written >= count else { return nil }
+        let offset = min(max(0, Int(delay * current.sampleRate)), current.written - count)
+        let start = ((current.writeIndex - offset - count) % Self.capacity + Self.capacity) % Self.capacity
         let recent = (0 ..< count).map { samples[(start + $0) % Self.capacity] }
-        return (recent, current.sampleRate)
+        return (recent, current.sampleRate, current.sequence)
+    }
+
+    /// Forgets buffered audio, so a new track never shows the previous one's tail.
+    func reset() {
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+        state.pointee.written = 0
     }
 
     /// A tap to put on an audio mix; each tap keeps this buffer alive until it is finalized.
@@ -93,20 +104,38 @@ final class SpectrumBuffer: @unchecked Sendable {
               let data = first.mData?.assumingMemoryBound(to: Float.self) else { return }
         let stride = current.isInterleaved ? current.channels : 1
         let available = Int(first.mDataByteSize) / MemoryLayout<Float>.size / stride
-        let count = min(Int(frames), available)
-        var index = current.writeIndex
+        appendLocked(data, count: min(Int(frames), available), stride: stride)
+    }
+
+    /// Caller holds the lock.
+    private func appendLocked(_ data: UnsafePointer<Float>, count: Int, stride: Int) {
+        var index = state.pointee.writeIndex
         for frame in 0 ..< count {
             samples[index] = data[frame * stride]
             index = (index + 1) % Self.capacity
         }
         state.pointee.writeIndex = index
-        state.pointee.written = min(current.written + count, Self.capacity)
+        state.pointee.written = min(state.pointee.written + count, Self.capacity)
+        state.pointee.sequence &+= UInt64(count)
+    }
+
+    /// Feeds mono samples as the tap would, for tests.
+    func append(_ mono: [Float], sampleRate: Double) {
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+        state.pointee.sampleRate = sampleRate
+        mono.withUnsafeBufferPointer { pointer in
+            guard let base = pointer.baseAddress else { return }
+            appendLocked(base, count: pointer.count, stride: 1)
+        }
     }
 }
 
 /// Turns a window of samples into log-spaced band levels from 0 to 1.
 struct SpectrumAnalyzer {
-    /// About 93 ms at 44.1 kHz, fine enough that bass bands still span a bin.
+    /// The newest ~46 ms at 44.1 kHz, zero-padded to `size` so bass bands still get distinct bins.
+    /// A longer window would lag: the Hann taper barely weighs the newest samples.
+    static let windowLength = 2048
     static let size = 4096
     static let lowestFrequency = 50.0
     static let highestFrequency = 16000.0
@@ -117,13 +146,13 @@ struct SpectrumAnalyzer {
     init?() {
         guard let fft = vDSP.FFT(log2n: 12, radix: .radix2, ofType: DSPSplitComplex.self) else { return nil }
         self.fft = fft
-        window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: Self.size, isHalfWindow: false)
+        window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: Self.windowLength, isHalfWindow: false)
     }
 
     func levels(of samples: [Float], sampleRate: Double, bands: Int) -> [Float] {
-        guard samples.count == Self.size, sampleRate > 0, bands > 0 else { return Array(repeating: 0, count: max(bands, 0)) }
+        guard samples.count == Self.windowLength, sampleRate > 0, bands > 0 else { return Array(repeating: 0, count: max(bands, 0)) }
         let half = Self.size / 2
-        let windowed = vDSP.multiply(samples, window)
+        let windowed = vDSP.multiply(samples, window) + [Float](repeating: 0, count: Self.size - Self.windowLength)
         var power = [Float](repeating: 0, count: half)
         var inputReal = [Float](repeating: 0, count: half)
         var inputImaginary = [Float](repeating: 0, count: half)
@@ -164,26 +193,47 @@ struct SpectrumAnalyzer {
             let last = max(first + 1, min(half, Int(high / binWidth)))
             let peak = first < half ? power[first ..< last].max() ?? 0 : 0
             // A full-scale sine lands near -6 dB; 64 dB below that reads as silence.
-            let decibels = 10 * log10(Double(peak) / Double(Self.size * Self.size) + 1e-12)
+            let decibels = 10 * log10(Double(peak) / Double(Self.windowLength * Self.windowLength) + 1e-12)
             return Float(min(1, max(0, (decibels + 70) / 64)))
         }
     }
 }
 
-/// Smoothed levels for the display: bars jump up and fall back gently.
+/// Smoothed levels for the display: bars jump up and fall back gently, and drop
+/// quickly when no fresh audio arrives (a track change, or AirPlay, which bypasses the tap).
 @MainActor
 final class SpectrumMonitor {
     static let bandCount = 32
     let buffer = SpectrumBuffer()
     private let analyzer = SpectrumAnalyzer()
     private var smoothed = [Float](repeating: 0, count: bandCount)
+    private var lastSequence: UInt64?
+    private var staleFrames = 0
+    private(set) var hasSignal = false
 
-    func update(isPlaying: Bool) -> [Float] {
-        var fresh = [Float](repeating: 0, count: Self.bandCount)
-        if isPlaying, let analyzer, let window = buffer.latest(SpectrumAnalyzer.size) {
-            fresh = analyzer.levels(of: window.samples, sampleRate: window.sampleRate, bands: Self.bandCount)
+    func reset() {
+        buffer.reset()
+        lastSequence = nil
+    }
+
+    /// `delay` holds the display back by the output latency so bars line up with what is heard.
+    func update(isPlaying: Bool, delay: TimeInterval = 0) -> [Float] {
+        var fresh: [Float]?
+        if isPlaying, let analyzer, let window = buffer.latest(SpectrumAnalyzer.windowLength, delay: delay) {
+            staleFrames = window.sequence == lastSequence ? staleFrames + 1 : 0
+            lastSequence = window.sequence
+            // Taps deliver roughly every 20 ms; much longer without audio means none is coming.
+            if staleFrames < 6 {
+                fresh = analyzer.levels(of: window.samples, sampleRate: window.sampleRate, bands: Self.bandCount)
+            }
         }
-        smoothed = zip(fresh, smoothed).map { max($0, $1 * 0.85) }
+        if let fresh {
+            smoothed = zip(fresh, smoothed).map { max($0, $1 * 0.85) }
+            hasSignal = true
+        } else {
+            smoothed = smoothed.map { $0 * 0.6 }
+            hasSignal = (smoothed.max() ?? 0) > 0.02
+        }
         return smoothed
     }
 }

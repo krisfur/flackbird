@@ -55,10 +55,12 @@ final class PlayerController {
     private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
     @ObservationIgnored let spectrum = SpectrumMonitor()
-    /// Taps each track's audio for the visualiser; off costs nothing.
+    static let visualizerKey = "showVisualizer"
+    /// Taps each track's audio for the visualiser; off costs nothing. Adding or removing a
+    /// tap mid-playback hiccups, so while playing a change waits for the next track.
     var visualizerEnabled = false {
         didSet {
-            guard visualizerEnabled != oldValue, let item = player.currentItem else { return }
+            guard visualizerEnabled != oldValue, !isPlaying, let item = player.currentItem else { return }
             if visualizerEnabled {
                 attachSpectrum(to: item)
             } else {
@@ -146,6 +148,7 @@ final class PlayerController {
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
         repeatMode = defaults.string(forKey: Self.repeatKey)
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
+        visualizerEnabled = defaults.bool(forKey: Self.visualizerKey)
         guard systemIntegration, let livePlayer = player.avPlayer else { return }
         configureRemoteCommands()
         publishPlaybackModes()
@@ -526,6 +529,7 @@ final class PlayerController {
         playbackActivation.cancel()
         seekGeneration += 1
         if visualizerEnabled {
+            spectrum.reset()
             attachSpectrum(to: item)
         }
         // Replacing an item on a running AVPlayer can start it immediately.
