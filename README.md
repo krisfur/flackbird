@@ -15,7 +15,7 @@ WAV and AIFF files typically carry no embedded tags or cover art, so they show u
 
 Folders are playlists: point it at a music folder and each subfolder becomes a playlist, with album, artist, and all-track views built from the files' own tags and embedded cover art.
 
-Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Trip in SwiftFlac", "Shuffle my library in SwiftFlac") and turn shuffle or repeat on and off.
+Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Trip in SwiftFlac", "Shuffle my library in SwiftFlac") and turn shuffle or repeat on and off. If Siri says SwiftFlac doesn't support a request, turn on Siri for SwiftFlac in the Shortcuts app; Settings → Siri & Shortcuts links there.
 
 ## Screenshots
 
