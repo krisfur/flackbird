@@ -384,8 +384,7 @@ struct ContentView: View {
                 player.seek(to: ScreenshotMode.startTime)
                 switch screenshot.screen {
                 case .library: mode = nil
-                case .albums: mode = .albums
-                case .search: mode = .allTracks
+                case .albums, .search: mode = .albums
                 case .folder, .nowPlaying:
                     mode = .folders
                     // Changing mode resets the path, so push after it settles.
@@ -659,11 +658,7 @@ struct TrackListView: View {
     let tracks: [Track]
     var showsArtist = true
     var onPlay: () -> Void = {}
-    #if DEBUG
-        @State private var searchText = ScreenshotMode.current?.screen == .search ? ScreenshotMode.searchQuery : ""
-    #else
-        @State private var searchText = ""
-    #endif
+    @State private var searchText = ""
 
     private var filteredTracks: [Track] {
         LibrarySearch.filter(tracks, query: searchText, name: \.displayTitle, artist: \.artist)

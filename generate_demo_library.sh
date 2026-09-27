@@ -62,7 +62,7 @@ ALBUMS=(
     "Road Trip|Night Transit|Neon Orchard|0x10002b 0x7b2cbf 0xff9e00|dots|124|55|Night Transit;Exit Nine;Mile Markers;Tail Lights;Overpass"
     "Road Trip|Amber Fields|Avery Stone Quartet|0x3d2c1e 0xb07d48 0xf3d9a4|sun|118|65.4|Amber Fields;Gravel Road;Long Way Round;Dusk Drive"
     "Workout|Slow Bloom|Mira Solen|0x1b4332 0x52b788 0xd8f3dc|rings|128|55|Slow Bloom;Pulse;Second Wind;Uphill"
-    "Workout|Low Tide Radio|Halcyon Drift|0x03045e 0x0096c7 0xcaf0f8|horizon|132|49|Low Tide Radio;Breakers;Undertow;Riptide"
+    "Workout|Low Tide Radio|Mira Solen|0x03045e 0x0096c7 0xcaf0f8|horizon|132|49|Low Tide Radio;Breakers;Undertow;Riptide"
 )
 
 echo "Generating demo library in $OUT"

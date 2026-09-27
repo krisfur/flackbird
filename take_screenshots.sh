@@ -62,8 +62,18 @@ shoot() {
 }
 
 ios() {
-    echo "iPhone: $IPHONE"
+    # iPad first: DeviceHub resets its rotation once it switches to showing another device.
+    # The App Store iPad set is landscape, but iPadOS ignores app rotation requests, so the
+    # captures follow the simulator: rotate it in DeviceHub first. It's left booted to keep that.
+    echo "iPad: $IPAD (rotate it to landscape in DeviceHub first)"
     local id
+    id=$(prepare "$IPAD")
+    for appearance in light dark; do
+        shoot "$id" albums "$appearance" 1 "$OUT/ipad-albums-$appearance.png"
+        shoot "$id" folder "$appearance" 1 "$OUT/ipad-list-$appearance.png"
+        shoot "$id" nowplaying "$appearance" 1 "$OUT/ipad-details-$appearance.png"
+    done
+    echo "iPhone: $IPHONE"
     id=$(prepare "$IPHONE")
     # README names: start, list, albums, details, search.
     for appearance in light dark; do
@@ -74,15 +84,6 @@ ios() {
         shoot "$id" search "$appearance" 0 "$OUT/ios-search-$appearance.png"
     done
     xcrun simctl shutdown "$id"
-    # The App Store iPad set is landscape, but iPadOS ignores app rotation requests, so the
-    # captures follow the simulator: rotate it in DeviceHub first. It's left booted to keep that.
-    echo "iPad: $IPAD (rotate it to landscape in DeviceHub first)"
-    id=$(prepare "$IPAD")
-    for appearance in light dark; do
-        shoot "$id" albums "$appearance" 1 "$OUT/ipad-albums-$appearance.png"
-        shoot "$id" folder "$appearance" 1 "$OUT/ipad-list-$appearance.png"
-        shoot "$id" nowplaying "$appearance" 1 "$OUT/ipad-details-$appearance.png"
-    done
 }
 
 build_mac() {

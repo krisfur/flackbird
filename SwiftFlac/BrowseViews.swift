@@ -186,7 +186,11 @@ struct ArtistsView: View {
 
 struct AlbumsView: View {
     @Environment(MusicLibrary.self) private var library
-    @State private var searchText = ""
+    #if DEBUG
+        @State private var searchText = ScreenshotMode.current?.screen == .search ? ScreenshotMode.searchQuery : ""
+    #else
+        @State private var searchText = ""
+    #endif
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
 
