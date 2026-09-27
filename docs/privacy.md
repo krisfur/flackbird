@@ -4,7 +4,7 @@ title: SwiftFlac Privacy Policy
 
 # Privacy Policy
 
-**Last updated: 26 July 2026**
+**Last updated: 27 September 2026**
 
 SwiftFlac is a local music player for iOS, iPadOS, and macOS. It collects nothing.
 
@@ -14,7 +14,7 @@ Nothing. SwiftFlac does not collect, transmit, sell, or share any personal data.
 
 ## Network access
 
-SwiftFlac makes no network connections. It has no code that contacts a server, and it works exactly the same with the device in airplane mode. The only link in the app is the GitHub link in the About screen, which opens in your browser when you tap it.
+SwiftFlac makes no network connections. It has no code that contacts a server, and it works exactly the same with the device in airplane mode. The only web link in the app is the GitHub link in Settings, which opens in your browser when you tap it.
 
 ## Your music files
 
@@ -22,13 +22,18 @@ SwiftFlac reads music files from a folder you choose, or from its own Documents 
 
 On macOS, the app stores a security-scoped bookmark so it can reopen the folder you picked without asking again. That bookmark stays on your device.
 
+## Siri and Shortcuts
+
+If you use Siri or the Shortcuts app with SwiftFlac, the names of your folders, albums, and artists are provided to the system on your device so Siri can recognise them in requests such as "Play Blue Hour in SwiftFlac". SwiftFlac itself sends nothing anywhere; how Siri handles requests is covered by Apple's privacy policy. Siri only works with SwiftFlac once you turn it on for the app in the Shortcuts app.
+
 ## What is stored on your device
 
 The following are saved locally, in the app's own storage, and are removed when you delete the app:
 
-- Your appearance preference, along with shuffle and repeat settings.
+- Your settings: appearance, shuffle and repeat, and whether audio quality and the visualiser are shown.
 - A cache of your library (file paths and tags) so the app opens quickly.
-- Your last playback position, so playback resumes where you left off.
+- Your queue, current track, and playback position, so playback resumes where you left off.
+- The screen you were last on, so the app reopens there.
 
 None of this leaves your device, and none of it is accessible to anyone else.
 
