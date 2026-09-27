@@ -68,7 +68,9 @@ In Xcode, select the SwiftFlac scheme and press Command-U. The default Core plan
 xcodebuild test -project SwiftFlac.xcodeproj -scheme SwiftFlac -testPlan Core -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 ```
 
-GitHub Actions runs this suite and an iOS Simulator build for pull requests targeting `main`, using GitHub's Xcode 27 preview runner. No UI automation, physical phone, or developer account is required. See [test scope](docs/testing.md).
+GitHub Actions runs this suite, an iOS Simulator build, and a SwiftFormat lint check for pull requests targeting `main`, using GitHub's Xcode 27 preview runner. No UI automation, physical phone, or developer account is required. See [test scope](docs/testing.md).
+
+Formatting is checked with SwiftFormat 0.63.0; run `swiftformat SwiftFlac Tests --lint` locally, or drop `--lint` to apply fixes.
 
 ## License
 
