@@ -65,6 +65,10 @@ final class MusicLibrary {
     /// Bumped whenever content lands (cache or scan) so restoration can react.
     private(set) var contentVersion = 0
 
+    var content: LibraryContent {
+        LibraryContent(playlists: playlists, albums: albums, artists: artists, allTracks: allTracks)
+    }
+
     private var scanGeneration = 0
     private var lastScanFinished = Date.distantPast
     private var lastFingerprint: Int?
@@ -85,6 +89,7 @@ final class MusicLibrary {
     @ObservationIgnored private(set) var scanTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var cacheWriteTask: Task<Void, Never>?
+    private let onContentChange: (MusicLibrary) -> Void
 
     init(
         defaults: UserDefaults = .standard,
@@ -95,7 +100,8 @@ final class MusicLibrary {
         fingerprint: @escaping @Sendable (URL) -> Int = LibraryScanner.fingerprint,
         now: @escaping () -> Date = Date.init,
         startAccess: @escaping (URL) -> Bool = { $0.startAccessingSecurityScopedResource() },
-        stopAccess: @escaping (URL) -> Void = { $0.stopAccessingSecurityScopedResource() }
+        stopAccess: @escaping (URL) -> Void = { $0.stopAccessingSecurityScopedResource() },
+        onContentChange: @escaping (MusicLibrary) -> Void = { _ in }
     ) {
         self.defaults = defaults
         self.cacheURL = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -106,6 +112,7 @@ final class MusicLibrary {
         self.now = now
         self.startAccess = startAccess
         self.stopAccess = stopAccess
+        self.onContentChange = onContentChange
         if let rootURL {
             beginAccess(to: rootURL)
         }
@@ -196,6 +203,7 @@ final class MusicLibrary {
         artists = content.artists
         allTracks = content.allTracks
         contentVersion += 1
+        onContentChange(self)
     }
 
     private func loadCache() {

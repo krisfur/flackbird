@@ -309,10 +309,10 @@ struct ContentView: View {
         }
         #if os(macOS)
         // The sidebar toolbar is too narrow and pushes items into the »
-        // overflow menu, so the options menu lives in the window toolbar.
+        // overflow menu, so the settings button lives in the window toolbar.
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                OptionsMenu(showingFolderPicker: $showingFolderPicker)
+                SettingsButton()
             }
         }
         // Swallow the popover-dismissing click so it can't hit a track
@@ -372,15 +372,11 @@ struct ContentView: View {
     }
 
     private func resolveDestination(_ token: String) -> LibraryDestination? {
-        NavigationPersistence.resolve(token, content: LibraryContent(
-            playlists: library.playlists, albums: library.albums,
-            artists: library.artists, allTracks: library.allTracks
-        ), root: library.rootURL)
+        NavigationPersistence.resolve(token, content: library.content, root: library.rootURL)
     }
 
     private func attemptRestore() {
         guard !library.playlists.isEmpty else { return }
-        player.libraryRoot = library.rootURL
         player.restoreSession(from: library.playlists.flatMap(\.tracks))
         restoreNavigationIfNeeded()
     }
@@ -547,106 +543,15 @@ struct ContentView: View {
     }
 }
 
-struct OptionsMenu: View {
-    @Environment(MusicLibrary.self) private var library
-    @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
-    @Binding var showingFolderPicker: Bool
-    @State private var showingAbout = false
-
-    var body: some View {
-        Menu {
-            Button("Choose Folder…", systemImage: "folder.badge.plus") {
-                showingFolderPicker = true
-            }
-            Button("Rescan Library", systemImage: "arrow.clockwise") {
-                library.rescan()
-            }
-            Picker("Appearance", selection: $appearanceRaw) {
-                ForEach(Appearance.allCases, id: \.rawValue) { appearance in
-                    Text(appearance.label).tag(appearance.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            Divider()
-            Button("About", systemImage: "info.circle") {
-                showingAbout = true
-            }
-        } label: {
-            Label("Options", systemImage: "ellipsis.circle")
-        }
-        .sheet(isPresented: $showingAbout) {
-            AboutView()
-        }
-    }
-}
-
-struct AboutView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    private static let repositoryURL = URL(string: "https://github.com/krisfur/swiftflac")!
-
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-    }
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image("AboutIcon")
-                .resizable()
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-            VStack(spacing: 4) {
-                Text("SwiftFlac")
-                    .font(.title2.weight(.semibold))
-                Text("Version \(version)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 4) {
-                Text("Made by Krzysztof Furman")
-                Text("MIT License")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.callout)
-
-            Link(destination: Self.repositoryURL) {
-                Label("View on GitHub", systemImage: "link")
-            }
-            .font(.callout)
-
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .padding(.top, 4)
-        }
-        .multilineTextAlignment(.center)
-        .padding(32)
-        #if os(macOS)
-            .frame(minWidth: 280)
-        #else
-            .presentationDetents([.medium])
-        #endif
-    }
-}
-
 #if os(iOS)
-    /// Every screen carries its own options menu so it stays reachable
+    /// Every screen carries its own settings button so it stays reachable
     /// anywhere in the navigation stack.
     private struct OptionsToolbarModifier: ViewModifier {
-        @Environment(MusicLibrary.self) private var library
-        @State private var showingFolderPicker = false
-
         func body(content: Content) -> some View {
             content
                 .toolbar {
                     ToolbarItem {
-                        OptionsMenu(showingFolderPicker: $showingFolderPicker)
-                    }
-                }
-                .fileImporter(isPresented: $showingFolderPicker, allowedContentTypes: [.folder]) { result in
-                    if case let .success(url) = result {
-                        library.setRootFolder(url)
+                        SettingsButton()
                     }
                 }
         }

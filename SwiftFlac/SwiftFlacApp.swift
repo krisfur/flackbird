@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 @main
@@ -7,15 +8,25 @@ struct SwiftFlacApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        var library: MusicLibrary?
+        var player: PlayerController?
         #if DEBUG
             if let launch = TestLaunch.make() {
-                _library = State(initialValue: launch.library)
-                _player = State(initialValue: launch.player)
-                return
+                library = launch.library
+                player = launch.player
             }
         #endif
-        _library = State(initialValue: MusicLibrary())
-        _player = State(initialValue: PlayerController())
+        let resolvedPlayer = player ?? PlayerController()
+        // Runs for cache and scan content alike, including background launches with no window.
+        let resolvedLibrary = library ?? MusicLibrary(onContentChange: { library in
+            resolvedPlayer.libraryRoot = library.rootURL
+            SwiftFlacShortcuts.updateAppShortcutParameters()
+        })
+        _library = State(initialValue: resolvedLibrary)
+        _player = State(initialValue: resolvedPlayer)
+        // Siri and Shortcuts intents can launch the app in the background, before any view exists.
+        AppDependencyManager.shared.add(dependency: resolvedLibrary)
+        AppDependencyManager.shared.add(dependency: resolvedPlayer)
     }
 
     var body: some Scene {

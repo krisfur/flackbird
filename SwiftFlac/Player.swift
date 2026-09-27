@@ -10,6 +10,22 @@ import OSLog
 
 enum RepeatMode: String {
     case off, all, one
+
+    init(_ type: MPRepeatType) {
+        switch type {
+        case .one: self = .one
+        case .all: self = .all
+        default: self = .off
+        }
+    }
+
+    var remoteType: MPRepeatType {
+        switch self {
+        case .off: .off
+        case .all: .all
+        case .one: .one
+        }
+    }
 }
 
 /// Carries the cover into MediaPlayer's artwork handler. That handler runs on
@@ -113,6 +129,7 @@ final class PlayerController {
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
         guard systemIntegration, let livePlayer = player.avPlayer else { return }
         configureRemoteCommands()
+        publishPlaybackModes()
         #if os(macOS)
             // Focused lists swallow bare Space (scroll page-down) before menu
             // shortcuts see it, so play/pause is handled app-wide here instead.
@@ -232,6 +249,20 @@ final class PlayerController {
         saveSession()
     }
 
+    /// Starts `tracks` in the given mode without first reshuffling the queue being replaced.
+    func play(_ track: Track, in tracks: [Track], shuffled: Bool) {
+        if shuffled != isShuffling {
+            storeShuffle(shuffled)
+        }
+        play(track, in: tracks)
+    }
+
+    private func storeShuffle(_ enabled: Bool) {
+        isShuffling = enabled
+        defaults.set(isShuffling, forKey: Self.shuffleKey)
+        publishPlaybackModes()
+    }
+
     func play(_ track: Track, in tracks: [Track]) {
         guard tracks.contains(track) else { return }
         consecutiveFailures = 0
@@ -249,8 +280,12 @@ final class PlayerController {
     }
 
     func toggleShuffle() {
-        isShuffling.toggle()
-        defaults.set(isShuffling, forKey: Self.shuffleKey)
+        setShuffle(!isShuffling)
+    }
+
+    func setShuffle(_ enabled: Bool) {
+        guard enabled != isShuffling else { return }
+        storeShuffle(enabled)
         guard let current = currentTrack else { return }
         if isShuffling {
             var rest = queue.filter { $0 != current }
@@ -266,11 +301,24 @@ final class PlayerController {
 
     func cycleRepeatMode() {
         switch repeatMode {
-        case .off: repeatMode = .all
-        case .all: repeatMode = .one
-        case .one: repeatMode = .off
+        case .off: setRepeatMode(.all)
+        case .all: setRepeatMode(.one)
+        case .one: setRepeatMode(.off)
         }
+    }
+
+    func setRepeatMode(_ mode: RepeatMode) {
+        repeatMode = mode
         defaults.set(repeatMode.rawValue, forKey: Self.repeatKey)
+        publishPlaybackModes()
+    }
+
+    /// Siri and accessories read the current modes from the command center.
+    private func publishPlaybackModes() {
+        guard systemIntegration else { return }
+        let center = MPRemoteCommandCenter.shared()
+        center.changeShuffleModeCommand.currentShuffleType = isShuffling ? .items : .off
+        center.changeRepeatModeCommand.currentRepeatType = repeatMode.remoteType
     }
 
     func togglePlayPause() {
@@ -555,6 +603,18 @@ final class PlayerController {
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(to: event.positionTime) }
+            return .success
+        }
+        center.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let enabled = event.shuffleType != .off
+            Task { @MainActor in self?.setShuffle(enabled) }
+            return .success
+        }
+        center.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let mode = RepeatMode(event.repeatType)
+            Task { @MainActor in self?.setRepeatMode(mode) }
             return .success
         }
     }
