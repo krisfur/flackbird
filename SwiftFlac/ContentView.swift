@@ -39,8 +39,22 @@ enum LibraryDestination: Hashable {
 /// declared with both.
 typealias LibraryNavigate = @MainActor @Sendable (LibraryDestination) -> Void
 
+/// Always equal, like SwiftUI's own actions: the closure only writes ContentView's
+/// @State, so a fresh copy per update must not invalidate every reader.
+struct LibraryNavigateAction: Equatable, Sendable {
+    let navigate: LibraryNavigate
+
+    @MainActor func callAsFunction(_ destination: LibraryDestination) {
+        navigate(destination)
+    }
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 extension EnvironmentValues {
-    @Entry var libraryNavigate: LibraryNavigate = { _ in }
+    @Entry var libraryNavigate = LibraryNavigateAction { _ in }
 }
 
 #if os(iOS)
@@ -312,12 +326,12 @@ struct ContentView: View {
             }
         }
         #endif
-        .environment(\.libraryNavigate) { destination in
+        .environment(\.libraryNavigate, LibraryNavigateAction { destination in
             #if os(macOS)
                 showingNowPlaying = false
             #endif
             path.append(destination)
-        }
+        })
         // Pick up where the last session left off, paused, as soon as any
         // content is available - the launch-time cache makes this nearly
         // instant; a fresh scan (first launch) arrives seconds later.
