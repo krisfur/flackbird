@@ -18,6 +18,7 @@ func artworkImage(from data: Data?) -> Image? {
 struct NowPlayingBar: View {
     @Environment(PlayerController.self) private var player
     @Environment(\.displayScale) private var displayScale
+    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
     @State private var artwork: Image?
     let onTap: () -> Void
 
@@ -72,6 +73,13 @@ struct NowPlayingBar: View {
             .buttonStyle(.plain)
             .padding(.horizontal)
             .padding(.vertical, 8)
+            .background(alignment: .bottom) {
+                if showVisualizer {
+                    SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying,
+                                 isAirPlaying: player.isAirPlaying, gap: 2)
+                        .frame(height: 18)
+                }
+            }
         }
         .background(.regularMaterial)
         // The bar redraws twice a second as the progress line advances, so
@@ -168,9 +176,14 @@ struct ToggleIcon: View {
 }
 
 /// Faint frequency bars behind the controls. Analysis only runs while this is on screen and playing.
-private struct SpectrumBars: View {
+/// Faint frequency bars. Analysis only runs while visible and playing; paused they
+/// rest at their minimum, and they hide when no audio reaches the tap (AirPlay).
+struct SpectrumBars: View {
     let monitor: SpectrumMonitor
     let isPlaying: Bool
+    let isAirPlaying: Bool
+    var gap: CGFloat = 3
+    var minimumHeight: CGFloat = 2
 
     /// The tap sees audio before the hardware plays it: a little on the speaker, ~200 ms over Bluetooth.
     private static var outputLatency: TimeInterval {
@@ -182,22 +195,22 @@ private struct SpectrumBars: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isPlaying)) { _ in
-            let levels = monitor.update(isPlaying: isPlaying, delay: Self.outputLatency)
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isPlaying)) { timeline in
+            let levels = isPlaying
+                ? monitor.update(delay: Self.outputLatency, at: timeline.date)
+                : [Float](repeating: 0, count: SpectrumMonitor.bandCount)
+            let visible = !isAirPlaying && (!isPlaying || monitor.hasSignal)
             Canvas { context, size in
-                let gap: CGFloat = 3
                 let width = (size.width - gap * CGFloat(levels.count - 1)) / CGFloat(levels.count)
                 for (index, level) in levels.enumerated() {
-                    let height = max(2, CGFloat(level) * size.height)
+                    let height = max(minimumHeight, CGFloat(level) * size.height)
                     let rect = CGRect(x: CGFloat(index) * (width + gap), y: size.height - height, width: width, height: height)
                     context.fill(Path(roundedRect: rect, cornerRadius: min(2, width / 2)), with: .color(.secondary.opacity(0.18)))
                 }
             }
-            .opacity(monitor.hasSignal ? 1 : 0)
-            .animation(.easeOut(duration: 0.3), value: monitor.hasSignal)
+            .opacity(visible ? 1 : 0)
+            .animation(.easeOut(duration: 0.3), value: visible)
         }
-        .opacity(isPlaying ? 1 : 0)
-        .animation(.easeOut(duration: 0.4), value: isPlaying)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -217,7 +230,7 @@ struct NowPlayingView: View {
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
     @AppStorage("showAudioQuality") private var showAudioQuality = true
-    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = false
+    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -265,7 +278,7 @@ struct NowPlayingView: View {
         }
         .background(alignment: .bottom) {
             if showVisualizer {
-                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying)
+                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying, isAirPlaying: player.isAirPlaying)
                     .frame(height: 90)
                     .ignoresSafeArea(edges: .bottom)
             }

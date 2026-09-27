@@ -200,7 +200,7 @@ struct SpectrumAnalyzer {
 }
 
 /// Smoothed levels for the display: bars jump up and fall back gently, and drop
-/// quickly when no fresh audio arrives (a track change, or AirPlay, which bypasses the tap).
+/// quickly when no fresh audio arrives. Several views can share one per frame.
 @MainActor
 final class SpectrumMonitor {
     static let bandCount = 32
@@ -209,17 +209,34 @@ final class SpectrumMonitor {
     private var smoothed = [Float](repeating: 0, count: bandCount)
     private var lastSequence: UInt64?
     private var staleFrames = 0
-    private(set) var hasSignal = false
+    private var lastUpdate: Date?
+    private var silentSince: Date?
+    /// False once playback has gone 1.5 s with no audio reaching the tap, as over AirPlay;
+    /// a track change's short gap doesn't count.
+    private(set) var hasSignal = true
 
     func reset() {
         buffer.reset()
         lastSequence = nil
     }
 
-    /// `delay` holds the display back by the output latency so bars line up with what is heard.
-    func update(isPlaying: Bool, delay: TimeInterval = 0) -> [Float] {
+    /// Called per frame while playing. `delay` holds the display back by the output latency
+    /// so bars line up with what is heard.
+    func update(delay: TimeInterval = 0, at date: Date = .now) -> [Float] {
+        if let lastUpdate {
+            let elapsed = date.timeIntervalSince(lastUpdate)
+            // Another view already advanced this frame.
+            if abs(elapsed) < 0.008 {
+                return smoothed
+            }
+            // A long gap means playback was paused; silence before it doesn't count.
+            if elapsed > 0.5 {
+                silentSince = nil
+            }
+        }
+        lastUpdate = date
         var fresh: [Float]?
-        if isPlaying, let analyzer, let window = buffer.latest(SpectrumAnalyzer.windowLength, delay: delay) {
+        if let analyzer, let window = buffer.latest(SpectrumAnalyzer.windowLength, delay: delay) {
             staleFrames = window.sequence == lastSequence ? staleFrames + 1 : 0
             lastSequence = window.sequence
             // Taps deliver roughly every 20 ms; much longer without audio means none is coming.
@@ -229,11 +246,12 @@ final class SpectrumMonitor {
         }
         if let fresh {
             smoothed = zip(fresh, smoothed).map { max($0, $1 * 0.85) }
-            hasSignal = true
+            silentSince = nil
         } else {
             smoothed = smoothed.map { $0 * 0.6 }
-            hasSignal = (smoothed.max() ?? 0) > 0.02
+            silentSince = silentSince ?? date
         }
+        hasSignal = silentSince.map { date.timeIntervalSince($0) < 1.5 } ?? true
         return smoothed
     }
 }

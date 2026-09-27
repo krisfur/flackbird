@@ -55,6 +55,8 @@ final class PlayerController {
     private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
     @ObservationIgnored let spectrum = SpectrumMonitor()
+    /// AirPlay bypasses the audio tap, so the visualiser hides.
+    private(set) var isAirPlaying = false
     static let visualizerKey = "showVisualizer"
     /// Taps each track's audio for the visualiser; off costs nothing. Adding or removing a
     /// tap mid-playback hiccups, so while playing a change waits for the next track.
@@ -148,7 +150,7 @@ final class PlayerController {
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
         repeatMode = defaults.string(forKey: Self.repeatKey)
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
-        visualizerEnabled = defaults.bool(forKey: Self.visualizerKey)
+        visualizerEnabled = defaults.object(forKey: Self.visualizerKey) as? Bool ?? true
         guard systemIntegration, let livePlayer = player.avPlayer else { return }
         configureRemoteCommands()
         publishPlaybackModes()
@@ -226,6 +228,14 @@ final class PlayerController {
                 MainActor.assumeIsolated {
                     self?.handleInterruption(began: type == .began, shouldResume: shouldResume)
                 }
+            }
+            updateAirPlayRoute()
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: AVAudioSession.sharedInstance(),
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateAirPlayRoute() }
             }
         #endif
     }
@@ -585,6 +595,12 @@ final class PlayerController {
             audioQuality = quality
         }
     }
+
+    #if os(iOS)
+        private func updateAirPlayRoute() {
+            isAirPlaying = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        }
+    #endif
 
     private func attachSpectrum(to item: AVPlayerItem) {
         Task {

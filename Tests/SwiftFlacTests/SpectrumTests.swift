@@ -47,26 +47,39 @@ struct SpectrumTests {
         #expect(buffer.makeTap() != nil)
     }
 
-    @Test @MainActor func monitorShowsFreshAudioAndDropsWhenItStops() {
+    @Test @MainActor func monitorShowsFreshAudioDropsOnGapsAndHidesOnlyAfterLongSilence() {
         let monitor = SpectrumMonitor()
-        #expect(monitor.update(isPlaying: true).allSatisfy { $0 == 0 } && !monitor.hasSignal)
-        monitor.buffer.append(sine(1000, amplitude: 0.5), sampleRate: 44100)
-        #expect((monitor.update(isPlaying: true).max() ?? 0) > 0.8 && monitor.hasSignal)
-        // No new samples, as on a track change or over AirPlay: bars fall away within a few frames.
-        for _ in 0 ..< 20 {
-            _ = monitor.update(isPlaying: true)
+        var now = Date()
+        func frame(_ seconds: TimeInterval = 1.0 / 60) -> [Float] {
+            now += seconds
+            return monitor.update(at: now)
         }
-        #expect(!monitor.hasSignal && (monitor.update(isPlaying: true).max() ?? 1) < 0.02)
+        #expect(frame().allSatisfy { $0 == 0 } && monitor.hasSignal)
         monitor.buffer.append(sine(1000, amplitude: 0.5), sampleRate: 44100)
-        #expect(monitor.update(isPlaying: false).allSatisfy { $0 < 0.02 })
+        #expect((frame().max() ?? 0) > 0.8)
+        // Two views on the same frame see the same levels without decaying twice.
+        #expect(monitor.update(at: now) == monitor.update(at: now))
+        // A short gap, like a track change: bars fall away but stay shown at their minimum.
+        for _ in 0 ..< 20 {
+            _ = frame()
+        }
+        #expect((frame().max() ?? 1) < 0.02 && monitor.hasSignal)
+        // No audio for over 1.5 s while playing, as over AirPlay: hide.
+        for _ in 0 ..< 90 {
+            _ = frame()
+        }
+        #expect(!monitor.hasSignal)
+        // After a pause, earlier silence no longer counts.
+        _ = frame(2)
+        #expect(monitor.hasSignal)
         monitor.reset()
         #expect(monitor.buffer.latest(SpectrumAnalyzer.windowLength) == nil)
     }
 
     @Test @MainActor func playerReadsTheVisualiserSetting() throws {
         let store = try TestStore()
-        #expect(!testPlayer(store).visualizerEnabled)
-        store.defaults.set(true, forKey: PlayerController.visualizerKey)
         #expect(testPlayer(store).visualizerEnabled)
+        store.defaults.set(false, forKey: PlayerController.visualizerKey)
+        #expect(!testPlayer(store).visualizerEnabled)
     }
 }
