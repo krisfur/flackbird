@@ -51,6 +51,8 @@ final class PlayerController {
     private(set) var currentIndex: Int?
     private(set) var isPlaying = false
     private(set) var nowPlaying = TrackMetadata()
+    /// The track `nowPlaying` describes; nil while a new track's metadata loads.
+    private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
     private(set) var isShuffling = false
     private(set) var repeatMode: RepeatMode = .off
@@ -543,23 +545,24 @@ final class PlayerController {
             return
         }
         nowPlaying = TrackMetadata()
+        nowPlayingSource = nil
         audioQuality = nil
         updateNowPlayingInfo()
-        Task {
-            let quality = await qualityLoader(track.url)
-            guard item === player.currentItem else { return }
-            audioQuality = quality
-        }
         metadataTask = Task {
             let metadata = await metadataLoader(track)
             guard item === player.currentItem else { return }
             nowPlaying = metadata
+            nowPlayingSource = track.url
             updateNowPlayingInfo()
             // AirPlay receivers read metadata from the item itself, not
             // from MPNowPlayingInfoCenter. (iOS-only API.)
             #if os(iOS)
                 item.externalMetadata = externalMetadata(for: track)
             #endif
+            // After the metadata, so it never competes with loading the cover.
+            let quality = await qualityLoader(track.url)
+            guard item === player.currentItem else { return }
+            audioQuality = quality
         }
     }
 

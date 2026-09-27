@@ -167,6 +167,11 @@ struct ToggleIcon: View {
     }
 }
 
+private struct ArtworkSource: Equatable {
+    let track: URL?
+    let data: Data?
+}
+
 struct NowPlayingView: View {
     @Environment(PlayerController.self) private var player
     @Environment(MusicLibrary.self) private var library
@@ -224,7 +229,9 @@ struct NowPlayingView: View {
         .background(AppBackground())
         // Full resolution here - this is the one place artwork is shown big -
         // but decoded once per track, not on every tick of the scrubber.
-        .task(id: player.nowPlaying.artworkData) {
+        .task(id: ArtworkSource(track: player.nowPlayingSource, data: player.nowPlaying.artworkData)) {
+            // Metadata is empty while the next track loads; keep the old cover instead of flashing the placeholder.
+            guard player.nowPlayingSource != nil else { return }
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)

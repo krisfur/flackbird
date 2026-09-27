@@ -184,9 +184,11 @@ struct PlaybackTests {
                                       }, durationLoader: { _ in 120 })
         player.play(tracks[0], in: tracks)
         await gate.waitUntilEntered()
+        #expect(player.nowPlayingSource == nil)
         let oldMetadata = player.metadataTask
         player.next()
         try await eventually { player.nowPlaying.title == "Current" }
+        #expect(player.nowPlayingSource == tracks[1].url)
         await gate.finish(TrackMetadata(title: "Obsolete"))
         await oldMetadata?.value
         player.togglePlayPause()
