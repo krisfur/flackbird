@@ -24,7 +24,7 @@ private struct DetachedArtwork: @unchecked Sendable {
     #endif
 
     var mediaItemArtwork: MPMediaItemArtwork {
-        MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in self.image }
+        MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 }
 
@@ -96,7 +96,7 @@ final class PlayerController {
         activate: @escaping @Sendable () async throws -> Void = PlaybackAudioSession.activate,
         metadataLoader: @escaping @Sendable (Track) async -> TrackMetadata = loadMetadata,
         durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
-            (try? await $0.asset.load(.duration))?.seconds ?? 0
+            await (try? $0.asset.load(.duration))?.seconds ?? 0
         }
     ) {
         player = transport ?? AVPlayer()
@@ -218,12 +218,12 @@ final class PlayerController {
         // activation is pending. AVPlayer starts only after activation succeeds.
         isPlaying = true
         playbackActivation.request { [weak self] in
-            guard let self, self.isPlaying, item === self.player.currentItem else { return }
-            self.player.play()
-            self.updateNowPlayingInfo()
+            guard let self, isPlaying, item === player.currentItem else { return }
+            player.play()
+            updateNowPlayingInfo()
         } onFailure: { [weak self] error in
-            guard let self, item === self.player.currentItem else { return }
-            self.pausePlayback()
+            guard let self, item === player.currentItem else { return }
+            pausePlayback()
             Self.logger.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")
         }
         updateNowPlayingInfo()

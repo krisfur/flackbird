@@ -361,7 +361,7 @@ struct NowPlayingView: View {
 
     private var subtitle: String {
         [player.nowPlaying.artist, player.nowPlaying.album]
-            .compactMap { $0 }
+            .compactMap(\.self)
             .joined(separator: " - ")
     }
 

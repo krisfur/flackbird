@@ -391,11 +391,10 @@ enum LibraryScanner {
         for url in sorted {
             // FLAC gets the fast header parser; other formats go through
             // AVFoundation, which understands their ID3/iTunes tags.
-            let tags: TrackMetadata
-            if url.pathExtension.lowercased() == "flac" {
-                tags = FlacMetadata.read(from: url, readArtwork: false)
+            let tags: TrackMetadata = if url.pathExtension.lowercased() == "flac" {
+                FlacMetadata.read(from: url, readArtwork: false)
             } else {
-                tags = await loadMetadata(from: url, includeArtwork: false)
+                await loadMetadata(from: url, includeArtwork: false)
             }
             tracks.append(Track(
                 url: url,

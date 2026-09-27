@@ -39,15 +39,8 @@ enum LibraryDestination: Hashable {
 /// declared with both.
 typealias LibraryNavigate = @MainActor @Sendable (LibraryDestination) -> Void
 
-private struct LibraryNavigateKey: EnvironmentKey {
-    static let defaultValue: LibraryNavigate = { _ in }
-}
-
 extension EnvironmentValues {
-    var libraryNavigate: LibraryNavigate {
-        get { self[LibraryNavigateKey.self] }
-        set { self[LibraryNavigateKey.self] = newValue }
-    }
+    @Entry var libraryNavigate: LibraryNavigate = { _ in }
 }
 
 #if os(iOS)
