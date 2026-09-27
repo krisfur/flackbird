@@ -11,7 +11,7 @@ struct SwiftFlacApp: App {
         var library: MusicLibrary?
         var player: PlayerController?
         #if DEBUG
-            if let launch = TestLaunch.make() {
+            if let launch = TestLaunch.make() ?? ScreenshotMode.makeLaunch() {
                 library = launch.library
                 player = launch.player
             }
