@@ -300,6 +300,8 @@ final class PlayerController {
         // Scrubbing into the last second means jump straight to the
         // end-of-track behaviour.
         if duration > 0, time >= duration - 1 {
+            // The bump above orphans any in-flight seek, and stopping at the queue end starts none.
+            isSeeking = false
             trackFinished()
             return
         }

@@ -84,6 +84,21 @@ struct PlaybackTests {
         #expect(player.currentTime == 0)
     }
 
+    @Test func scrubToEndOfLastTrackKeepsTimeUpdating() async throws {
+        let store = try TestStore()
+        let transport = FakeTransport()
+        let player = testPlayer(store, transport: transport)
+        let tracks = testTracks(root: store.root)
+        player.play(tracks[2], in: tracks)
+        try await eventually { player.duration == 120 }
+        player.seek(to: 50)
+        player.seek(to: 119.5)
+        transport.completeSeek()
+        #expect(!player.isPlaying && player.currentTrack == tracks[2])
+        player.updatePlaybackTime(30)
+        #expect(player.currentTime == 30)
+    }
+
     @Test(arguments: [false, true]) func failedQueueTerminatesEvenWithRepeat(repeatOne: Bool) throws {
         let store = try TestStore()
         let player = testPlayer(store)
