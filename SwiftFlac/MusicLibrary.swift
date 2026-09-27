@@ -106,6 +106,9 @@ final class MusicLibrary {
         self.now = now
         self.startAccess = startAccess
         self.stopAccess = stopAccess
+        if let rootURL {
+            beginAccess(to: rootURL)
+        }
         if startsAutomatically {
             if rootURL == nil {
                 restoreRoot()
@@ -212,16 +215,16 @@ final class MusicLibrary {
 
     private func saveCache(_ playlists: [Playlist]) {
         guard let rootURL else { return }
-        let cache = LibraryCache(playlists: playlists.map { playlist in
-            LibraryCache.CachedPlaylist(
-                name: playlist.name,
-                relativeFolder: NavigationPersistence.relativePath(playlist.folderURL, root: rootURL),
-                tracks: playlist.tracks.map { LibraryCache.CachedTrack(track: $0, root: rootURL) }
-            )
-        })
         let previousWrite = cacheWriteTask
         let cacheURL = cacheURL
         cacheWriteTask = Task.detached(priority: .utility) {
+            let cache = LibraryCache(playlists: playlists.map { playlist in
+                LibraryCache.CachedPlaylist(
+                    name: playlist.name,
+                    relativeFolder: NavigationPersistence.relativePath(playlist.folderURL, root: rootURL),
+                    tracks: playlist.tracks.map { LibraryCache.CachedTrack(track: $0, root: rootURL) }
+                )
+            })
             await previousWrite?.value
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? FileManager.default.createDirectory(
@@ -274,7 +277,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         let contents = (try? fm.contentsOfDirectory(
             at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         )) ?? []
 
@@ -312,7 +315,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: root,
-            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         ) else { return 0 }
 
@@ -375,7 +378,7 @@ enum LibraryScanner {
     private static func audioFiles(under folder: URL) -> [URL] {
         let fm = FileManager.default
         var files: [URL] = []
-        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator where isAudioFile(url) {
                 files.append(url)
             }
@@ -441,8 +444,10 @@ enum LibraryScanner {
     }
 
     private static func isAudioFile(_ url: URL) -> Bool {
-        audioExtensions.contains(url.pathExtension.lowercased())
-            // Not isRegularFile: that rejects symlinked tracks along with directories.
-            && (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true
+        guard audioExtensions.contains(url.pathExtension.lowercased()),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
+        // Links are rare, so resolving them costs little; broken ones and links to folders drop out.
+        guard values.isSymbolicLink == true else { return values.isRegularFile == true }
+        return (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 }

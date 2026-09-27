@@ -138,8 +138,7 @@ final class PlayerController {
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated {
-                guard let self, !self.isSeeking else { return }
-                self.updatePlaybackTime(time.seconds)
+                self?.updatePlaybackTime(time.seconds)
             }
         }
         NotificationCenter.default.addObserver(
@@ -327,7 +326,7 @@ final class PlayerController {
                 let landed = self.player.currentTime().seconds
                 self.currentTime = landed.isFinite ? landed : target
                 self.updateNowPlayingInfo()
-                self.saveSession()
+                self.saveSessionTime()
             }
         }
         updateNowPlayingInfo()
@@ -337,7 +336,7 @@ final class PlayerController {
         guard !isSeeking, seconds.isFinite else { return }
         currentTime = max(0, seconds)
         if Date().timeIntervalSince(lastSessionSave) > 5 {
-            saveSession()
+            saveSessionTime()
         }
     }
 
@@ -421,10 +420,16 @@ final class PlayerController {
 
     private func saveSession() {
         guard let track = currentTrack else { return }
-        lastSessionSave = Date()
         defaults.set(queue.map { sessionKey(for: $0.url) }, forKey: Self.sessionQueueKey)
         defaults.set(originalQueue.map { sessionKey(for: $0.url) }, forKey: Self.sessionOriginalQueueKey)
         defaults.set(sessionKey(for: track.url), forKey: Self.sessionTrackKey)
+        saveSessionTime()
+    }
+
+    /// Progress and seeks only move the time; the queue is saved when it changes.
+    private func saveSessionTime() {
+        guard currentTrack != nil else { return }
+        lastSessionSave = Date()
         defaults.set(currentTime, forKey: Self.sessionTimeKey)
     }
 

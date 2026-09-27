@@ -13,6 +13,10 @@ struct LibraryTests {
         try FileManager.default.createDirectory(at: store.root.appendingPathComponent("fake.flac"), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("Collection/linked.flac"),
                                                    withDestinationURL: store.root.appendingPathComponent("root.FLAC"))
+        try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("Collection/broken.flac"),
+                                                   withDestinationURL: store.root.appendingPathComponent("missing.flac"))
+        try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("Collection/folder.flac"),
+                                                   withDestinationURL: store.root.appendingPathComponent("fake.flac"))
         let content = await LibraryScanner.scan(root: store.root)
         #expect(content.playlists.count == 2)
         #expect(content.playlists.flatMap(\.tracks).count == 3)

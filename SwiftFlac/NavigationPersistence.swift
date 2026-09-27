@@ -3,9 +3,10 @@ import Foundation
 /// Stable navigation tokens survive rescans and app-container relocation.
 enum NavigationPersistence {
     static func relativePath(_ url: URL, root: URL?) -> String {
-        let path = normalizedPath(url)
+        // Track and Playlist URLs are already NFC; only the root may not be.
+        let path = foldingPrivateAlias(url.path)
         guard let root else { return path }
-        let rootPath = normalizedPath(root)
+        let rootPath = foldingPrivateAlias(root.path.precomposedStringWithCanonicalMapping)
         if rootPath == "/" {
             return path
         }
@@ -15,8 +16,7 @@ enum NavigationPersistence {
 
     /// Enumeration can report /var and /tmp through their /private targets. Folded as
     /// a string op: resolving symlinks would hit the disk for every track.
-    private static func normalizedPath(_ url: URL) -> String {
-        let path = url.path.precomposedStringWithCanonicalMapping
+    private static func foldingPrivateAlias(_ path: String) -> String {
         for alias in ["/private/var", "/private/tmp"] where path == alias || path.hasPrefix(alias + "/") {
             return String(path.dropFirst("/private".count))
         }
