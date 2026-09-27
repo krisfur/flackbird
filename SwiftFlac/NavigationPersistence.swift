@@ -3,8 +3,24 @@ import Foundation
 /// Stable navigation tokens survive rescans and app-container relocation.
 enum NavigationPersistence {
     static func relativePath(_ url: URL, root: URL?) -> String {
-        guard let root = root?.path, url.path.hasPrefix(root) else { return url.path }
-        return String(url.path.dropFirst(root.count))
+        let path = normalizedPath(url)
+        guard let root else { return path }
+        let rootPath = normalizedPath(root)
+        if rootPath == "/" {
+            return path
+        }
+        guard path == rootPath || path.hasPrefix(rootPath + "/") else { return path }
+        return String(path.dropFirst(rootPath.count))
+    }
+
+    /// Enumeration can report /var and /tmp through their /private targets. Folded as
+    /// a string op: resolving symlinks would hit the disk for every track.
+    private static func normalizedPath(_ url: URL) -> String {
+        let path = url.canonicalFileURL.path
+        for alias in ["/private/var", "/private/tmp"] where path == alias || path.hasPrefix(alias + "/") {
+            return String(path.dropFirst("/private".count))
+        }
+        return path
     }
 
     static func token(for destination: LibraryDestination, root: URL?) -> String {
@@ -44,6 +60,9 @@ enum NavigationPersistence {
             if hasTrack {
                 forward.append(.nowPlaying)
             }
+        }
+        if !hasTrack {
+            forward.removeAll { $0 == .nowPlaying }
         }
     }
 }

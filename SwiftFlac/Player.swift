@@ -46,6 +46,7 @@ final class PlayerController {
     private let metadataLoader: @Sendable (Track) async -> TrackMetadata
     private let durationLoader: @MainActor (AVPlayerItem) async -> Double
     private let playbackActivation: PlaybackActivation
+    private var seekGeneration = 0
     private(set) var nowPlayingInfo: [String: Any]?
     private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
     /// The macOS route picker needs the player reference to offer AirPlay.
@@ -64,6 +65,7 @@ final class PlayerController {
     private static let shuffleKey = "playerShuffle"
     private static let repeatKey = "playerRepeatMode"
     private static let sessionQueueKey = "sessionQueuePaths"
+    private static let sessionOriginalQueueKey = "sessionOriginalQueuePaths"
     private static let sessionTrackKey = "sessionTrackPath"
     private static let sessionTimeKey = "sessionTime"
 
@@ -229,6 +231,8 @@ final class PlayerController {
     }
 
     func play(_ track: Track, in tracks: [Track]) {
+        guard tracks.contains(track) else { return }
+        consecutiveFailures = 0
         originalQueue = tracks
         if isShuffling {
             var rest = tracks.filter { $0 != track }
@@ -255,6 +259,7 @@ final class PlayerController {
             queue = originalQueue
             currentIndex = originalQueue.firstIndex(of: current)
         }
+        saveSession()
     }
 
     func cycleRepeatMode() {
@@ -289,7 +294,9 @@ final class PlayerController {
     }
 
     func seek(to time: TimeInterval) {
-        guard player.currentItem != nil else { return }
+        guard let item = player.currentItem, time.isFinite else { return }
+        seekGeneration += 1
+        let generation = seekGeneration
         // Scrubbing into the last second means jump straight to the
         // end-of-track behaviour.
         if duration > 0, time >= duration - 1 {
@@ -309,7 +316,8 @@ final class PlayerController {
             toleranceAfter: .zero
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, item === self.player.currentItem,
+                      generation == self.seekGeneration else { return }
                 self.isSeeking = false
                 // Republish once the seek lands: the tolerance means the
                 // player can settle before the target, and nothing else
@@ -317,13 +325,15 @@ final class PlayerController {
                 let landed = self.player.currentTime().seconds
                 self.currentTime = landed.isFinite ? landed : target
                 self.updateNowPlayingInfo()
+                self.saveSession()
             }
         }
         updateNowPlayingInfo()
     }
 
     func updatePlaybackTime(_ seconds: Double) {
-        currentTime = seconds
+        guard !isSeeking, seconds.isFinite else { return }
+        currentTime = max(0, seconds)
         if Date().timeIntervalSince(lastSessionSave) > 5 {
             saveSession()
         }
@@ -358,6 +368,9 @@ final class PlayerController {
 
     func trackFinished() {
         if repeatMode == .one {
+            guard let item = player.currentItem else { return }
+            seekGeneration += 1
+            let generation = seekGeneration
             // The seek is async: publishing the reset before it lands leaves
             // the lock screen stuck at the end of the track, so republish from
             // the completion handler once the player really is back at zero.
@@ -365,7 +378,8 @@ final class PlayerController {
             currentTime = 0
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, item === self.player.currentItem,
+                          generation == self.seekGeneration else { return }
                     self.isSeeking = false
                     self.currentTime = 0
                     self.updateNowPlayingInfo()
@@ -386,7 +400,8 @@ final class PlayerController {
         guard currentTrack == nil,
               let savedTrackPath = defaults.string(forKey: Self.sessionTrackKey) else { return }
         let savedQueuePaths = defaults.stringArray(forKey: Self.sessionQueueKey) ?? []
-        let savedTime = defaults.double(forKey: Self.sessionTimeKey)
+        let rawTime = defaults.double(forKey: Self.sessionTimeKey)
+        let savedTime = rawTime.isFinite ? max(0, rawTime) : 0
 
         let byPath = Dictionary(tracks.map { (sessionKey(for: $0.url), $0) }, uniquingKeysWith: { first, _ in first })
         let restoredQueue = savedQueuePaths.compactMap { byPath[$0] }
@@ -394,7 +409,10 @@ final class PlayerController {
               let index = restoredQueue.firstIndex(of: track) else { return }
 
         queue = restoredQueue
-        originalQueue = restoredQueue
+        let originalPaths = defaults.stringArray(forKey: Self.sessionOriginalQueueKey) ?? savedQueuePaths
+        let restoredOriginal = originalPaths.compactMap { byPath[$0] }
+        originalQueue = Set(restoredOriginal.map(\.url)) == Set(restoredQueue.map(\.url))
+            ? restoredOriginal : restoredQueue
         currentIndex = index
         startCurrentTrack(paused: true, startTime: savedTime)
     }
@@ -403,6 +421,7 @@ final class PlayerController {
         guard let track = currentTrack else { return }
         lastSessionSave = Date()
         defaults.set(queue.map { sessionKey(for: $0.url) }, forKey: Self.sessionQueueKey)
+        defaults.set(originalQueue.map { sessionKey(for: $0.url) }, forKey: Self.sessionOriginalQueueKey)
         defaults.set(sessionKey(for: track.url), forKey: Self.sessionTrackKey)
         defaults.set(currentTime, forKey: Self.sessionTimeKey)
     }
@@ -430,6 +449,7 @@ final class PlayerController {
             }
         }
         playbackActivation.cancel()
+        seekGeneration += 1
         // Replacing an item on a running AVPlayer can start it immediately.
         // Hold playback until the new request has activated the audio session.
         player.pause()
@@ -466,7 +486,7 @@ final class PlayerController {
         updateNowPlayingInfo()
         metadataTask = Task {
             let metadata = await metadataLoader(track)
-            guard track == currentTrack else { return }
+            guard item === player.currentItem else { return }
             nowPlaying = metadata
             updateNowPlayingInfo()
             // AirPlay receivers read metadata from the item itself, not

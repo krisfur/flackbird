@@ -393,7 +393,6 @@ struct ContentView: View {
             )
             var restoredForward = (defaults.stringArray(forKey: Self.navForwardKey) ?? [])
                 .compactMap(resolveDestination)
-                .filter { $0 != .nowPlaying || player.currentTrack != nil }
             // Launch-time pushes of the now-playing screen are unreliable on
             // device, so it is never auto-pushed: it moves to the top of the
             // forward stack instead, one bar tap or forward swipe away.
@@ -759,7 +758,9 @@ struct TrackRow: View {
             Spacer()
         }
         .task(id: track.url) {
-            artwork = await ArtworkStore.shared.thumbnail(for: track, maxPixelSize: Int(40 * displayScale))
+            let loaded = await ArtworkStore.shared.thumbnail(for: track, maxPixelSize: Int(40 * displayScale))
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }

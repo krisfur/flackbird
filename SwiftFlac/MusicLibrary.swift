@@ -219,8 +219,10 @@ final class MusicLibrary {
                 tracks: playlist.tracks.map { LibraryCache.CachedTrack(track: $0, root: rootURL) }
             )
         })
+        let previousWrite = cacheWriteTask
         let cacheURL = cacheURL
         cacheWriteTask = Task.detached(priority: .utility) {
+            await previousWrite?.value
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? FileManager.default.createDirectory(
                 at: cacheURL.deletingLastPathComponent(),
@@ -272,7 +274,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         let contents = (try? fm.contentsOfDirectory(
             at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         )) ?? []
 
@@ -310,7 +312,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: root,
-            includingPropertiesForKeys: [.fileSizeKey],
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return 0 }
 
@@ -373,7 +375,7 @@ enum LibraryScanner {
     private static func audioFiles(under folder: URL) -> [URL] {
         let fm = FileManager.default
         var files: [URL] = []
-        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator where isAudioFile(url) {
                 files.append(url)
             }
@@ -441,5 +443,6 @@ enum LibraryScanner {
 
     private static func isAudioFile(_ url: URL) -> Bool {
         audioExtensions.contains(url.pathExtension.lowercased())
+            && (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 }

@@ -251,10 +251,12 @@ struct AlbumCell: View {
                 .lineLimit(1)
         }
         .task(id: album.id) {
-            artwork = await ArtworkStore.shared.thumbnail(
+            let loaded = await ArtworkStore.shared.thumbnail(
                 for: album.tracks.first,
                 maxPixelSize: Int(Self.drawnSize * displayScale)
             )
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }
@@ -334,6 +336,8 @@ final class ArtworkStore {
             return nil
         }
         cache.setObject(thumbnail, forKey: key, cost: thumbnail.cost)
+        // Keep the decode for the next appearance, but don't hand it to a canceled view.
+        guard !Task.isCancelled else { return nil }
         return Image(decorative: thumbnail.image, scale: 1)
     }
 }

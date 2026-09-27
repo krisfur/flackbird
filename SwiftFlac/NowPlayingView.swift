@@ -77,10 +77,12 @@ struct NowPlayingBar: View {
         // The bar redraws twice a second as the progress line advances, so
         // the thumbnail is resolved once per track instead of in body.
         .task(id: player.currentTrack?.url) {
-            artwork = await ArtworkStore.shared.thumbnail(
+            let loaded = await ArtworkStore.shared.thumbnail(
                 for: player.currentTrack,
                 maxPixelSize: Int(40 * displayScale)
             )
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }
