@@ -18,6 +18,7 @@ func artworkImage(from data: Data?) -> Image? {
 struct NowPlayingBar: View {
     @Environment(PlayerController.self) private var player
     @Environment(\.displayScale) private var displayScale
+    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
     @State private var artwork: Image?
     let onTap: () -> Void
 
@@ -33,7 +34,7 @@ struct NowPlayingBar: View {
                         Text(player.displayTitle)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                        if let artist = player.nowPlaying.artist {
+                        if let artist = player.displayArtist {
                             Text(artist)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -71,7 +72,16 @@ struct NowPlayingBar: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, showVisualizer ? 4 : 8)
+            // Its own row under the content, so it never overlaps the title.
+            if showVisualizer {
+                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying,
+                             isAirPlaying: player.isAirPlaying, gap: 2)
+                    .frame(height: 10)
+                    .padding(.horizontal)
+                    .padding(.bottom, 2)
+            }
         }
         .background(.regularMaterial)
         // The bar redraws twice a second as the progress line advances, so
@@ -167,6 +177,47 @@ struct ToggleIcon: View {
     }
 }
 
+/// Faint frequency bars behind the controls. Analysis only runs while this is on screen and playing.
+/// Faint frequency bars. Analysis only runs while visible and playing; paused they
+/// rest at their minimum, and they hide when no audio reaches the tap (AirPlay).
+struct SpectrumBars: View {
+    let monitor: SpectrumMonitor
+    let isPlaying: Bool
+    let isAirPlaying: Bool
+    var gap: CGFloat = 3
+    var minimumHeight: CGFloat = 2
+
+    /// The tap sees audio before the hardware plays it: a little on the speaker, ~200 ms over Bluetooth.
+    private static var outputLatency: TimeInterval {
+        #if os(iOS)
+            AVAudioSession.sharedInstance().outputLatency
+        #else
+            0
+        #endif
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isPlaying)) { timeline in
+            let levels = isPlaying
+                ? monitor.update(delay: Self.outputLatency, at: timeline.date)
+                : [Float](repeating: 0, count: SpectrumMonitor.bandCount)
+            let visible = !isAirPlaying && (!isPlaying || monitor.hasSignal)
+            Canvas { context, size in
+                let width = (size.width - gap * CGFloat(levels.count - 1)) / CGFloat(levels.count)
+                for (index, level) in levels.enumerated() {
+                    let height = max(minimumHeight, CGFloat(level) * size.height)
+                    let rect = CGRect(x: CGFloat(index) * (width + gap), y: size.height - height, width: width, height: height)
+                    context.fill(Path(roundedRect: rect, cornerRadius: min(2, width / 2)), with: .color(.secondary.opacity(0.18)))
+                }
+            }
+            .opacity(visible ? 1 : 0)
+            .animation(.easeOut(duration: 0.3), value: visible)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct ArtworkSource: Equatable {
     let track: URL?
     let data: Data?
@@ -181,6 +232,7 @@ struct NowPlayingView: View {
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
     @AppStorage("showAudioQuality") private var showAudioQuality = true
+    @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -226,6 +278,13 @@ struct NowPlayingView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
         }
+        .background(alignment: .bottom) {
+            if showVisualizer {
+                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying, isAirPlaying: player.isAirPlaying)
+                    .frame(height: 90)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+        }
         .background(AppBackground())
         // Full resolution here - this is the one place artwork is shown big -
         // but decoded once per track, not on every tick of the scrubber.
@@ -255,10 +314,10 @@ struct NowPlayingView: View {
 
     private func artwork(fitting size: CGSize, landscape: Bool) -> some View {
         // Reserve room for the controls: beside the artwork in landscape,
-        // below it (~280pt) in portrait.
+        // below it (~324pt, including the fixed-height title and credits) in portrait.
         let side = landscape
             ? min(size.height - 64, size.width * 0.45, 320)
-            : min(size.width - 64, size.height - 280, 320)
+            : min(size.width - 64, size.height - 324, 320)
         return goToTarget(artworkMenu) {
             ArtworkView(image: artwork, size: max(side, 120), cornerRadius: 12)
                 .shadow(radius: 10)
@@ -268,12 +327,17 @@ struct NowPlayingView: View {
     private var info: some View {
         goToTarget(infoMenu) {
             VStack(spacing: 4) {
+                // Fixed heights (two lines each for title and credits), so long names don't shift the layout between tracks.
                 Text(player.displayTitle)
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(subtitle)
+                    .lineLimit(2, reservesSpace: true)
+                // Empty text collapses to no height despite reservesSpace.
+                Text(subtitle.isEmpty ? " " : subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(.horizontal)
@@ -333,8 +397,9 @@ struct NowPlayingView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
-            if showAudioQuality, let quality = player.audioQuality {
-                Text(quality.summary)
+            // Always takes its line, so the layout doesn't hop when the value arrives.
+            if showAudioQuality {
+                Text(player.audioQuality?.summary ?? " ")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -375,7 +440,7 @@ struct NowPlayingView: View {
     }
 
     private var subtitle: String {
-        [player.nowPlaying.artist, player.nowPlaying.album]
+        [player.displayArtist, player.displayAlbum]
             .compactMap(\.self)
             .joined(separator: " - ")
     }

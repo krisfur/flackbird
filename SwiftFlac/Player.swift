@@ -54,6 +54,23 @@ final class PlayerController {
     /// The track `nowPlaying` describes; nil while a new track's metadata loads.
     private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
+    @ObservationIgnored let spectrum = SpectrumMonitor()
+    /// AirPlay bypasses the audio tap, so the visualiser hides.
+    private(set) var isAirPlaying = false
+    static let visualizerKey = "showVisualizer"
+    /// Taps each track's audio for the visualiser; off costs nothing. Adding or removing a
+    /// tap mid-playback hiccups, so while playing a change waits for the next track.
+    var visualizerEnabled = false {
+        didSet {
+            guard visualizerEnabled != oldValue, !isPlaying, let item = player.currentItem else { return }
+            if visualizerEnabled {
+                attachSpectrum(to: item)
+            } else {
+                item.audioMix = nil
+            }
+        }
+    }
+
     private(set) var isShuffling = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var currentTime: TimeInterval = 0
@@ -110,6 +127,15 @@ final class PlayerController {
         nowPlaying.title ?? currentTrack?.displayTitle ?? ""
     }
 
+    /// Scanned tags stand in while a new track's metadata loads, so the text never blanks.
+    var displayArtist: String? {
+        nowPlaying.artist ?? currentTrack?.artist
+    }
+
+    var displayAlbum: String? {
+        nowPlaying.album ?? currentTrack?.album
+    }
+
     init(
         transport: (any PlaybackTransport)? = nil,
         defaults: UserDefaults = .standard,
@@ -133,6 +159,7 @@ final class PlayerController {
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
         repeatMode = defaults.string(forKey: Self.repeatKey)
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
+        visualizerEnabled = defaults.object(forKey: Self.visualizerKey) as? Bool ?? true
         guard systemIntegration, let livePlayer = player.avPlayer else { return }
         configureRemoteCommands()
         publishPlaybackModes()
@@ -210,6 +237,14 @@ final class PlayerController {
                 MainActor.assumeIsolated {
                     self?.handleInterruption(began: type == .began, shouldResume: shouldResume)
                 }
+            }
+            updateAirPlayRoute()
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: AVAudioSession.sharedInstance(),
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateAirPlayRoute() }
             }
         #endif
     }
@@ -512,6 +547,10 @@ final class PlayerController {
         }
         playbackActivation.cancel()
         seekGeneration += 1
+        if visualizerEnabled {
+            spectrum.reset()
+            attachSpectrum(to: item)
+        }
         // Replacing an item on a running AVPlayer can start it immediately.
         // Hold playback until the new request has activated the audio session.
         player.pause()
@@ -546,7 +585,6 @@ final class PlayerController {
         }
         nowPlaying = TrackMetadata()
         nowPlayingSource = nil
-        audioQuality = nil
         updateNowPlayingInfo()
         metadataTask = Task {
             let metadata = await metadataLoader(track)
@@ -559,10 +597,29 @@ final class PlayerController {
             #if os(iOS)
                 item.externalMetadata = externalMetadata(for: track)
             #endif
-            // After the metadata, so it never competes with loading the cover.
+            // After the metadata, so it never competes with loading the cover. The previous
+            // track's value stays until then, so the line updates in place.
             let quality = await qualityLoader(track.url)
             guard item === player.currentItem else { return }
             audioQuality = quality
+        }
+    }
+
+    #if os(iOS)
+        private func updateAirPlayRoute() {
+            isAirPlaying = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        }
+    #endif
+
+    private func attachSpectrum(to item: AVPlayerItem) {
+        Task {
+            guard let track = try? await item.asset.loadTracks(withMediaType: .audio).first,
+                  visualizerEnabled, item.audioMix == nil, let tap = spectrum.buffer.makeTap() else { return }
+            let parameters = AVMutableAudioMixInputParameters(track: track)
+            parameters.audioTapProcessor = tap
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [parameters]
+            item.audioMix = mix
         }
     }
 
@@ -646,10 +703,10 @@ final class PlayerController {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
-        if let artist = nowPlaying.artist {
+        if let artist = displayArtist {
             info[MPMediaItemPropertyArtist] = artist
         }
-        if let album = nowPlaying.album {
+        if let album = displayAlbum {
             info[MPMediaItemPropertyAlbumTitle] = album
         }
         #if canImport(UIKit)
