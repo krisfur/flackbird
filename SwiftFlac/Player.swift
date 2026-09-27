@@ -127,6 +127,15 @@ final class PlayerController {
         nowPlaying.title ?? currentTrack?.displayTitle ?? ""
     }
 
+    /// Scanned tags stand in while a new track's metadata loads, so the text never blanks.
+    var displayArtist: String? {
+        nowPlaying.artist ?? currentTrack?.artist
+    }
+
+    var displayAlbum: String? {
+        nowPlaying.album ?? currentTrack?.album
+    }
+
     init(
         transport: (any PlaybackTransport)? = nil,
         defaults: UserDefaults = .standard,
@@ -694,10 +703,10 @@ final class PlayerController {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
-        if let artist = nowPlaying.artist {
+        if let artist = displayArtist {
             info[MPMediaItemPropertyArtist] = artist
         }
-        if let album = nowPlaying.album {
+        if let album = displayAlbum {
             info[MPMediaItemPropertyAlbumTitle] = album
         }
         #if canImport(UIKit)

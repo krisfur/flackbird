@@ -34,7 +34,7 @@ struct NowPlayingBar: View {
                         Text(player.displayTitle)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                        if let artist = player.nowPlaying.artist {
+                        if let artist = player.displayArtist {
                             Text(artist)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -332,7 +332,8 @@ struct NowPlayingView: View {
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2, reservesSpace: true)
-                Text(subtitle)
+                // Empty text collapses to no height despite reservesSpace.
+                Text(subtitle.isEmpty ? " " : subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -439,7 +440,7 @@ struct NowPlayingView: View {
     }
 
     private var subtitle: String {
-        [player.nowPlaying.artist, player.nowPlaying.album]
+        [player.displayArtist, player.displayAlbum]
             .compactMap(\.self)
             .joined(separator: " - ")
     }

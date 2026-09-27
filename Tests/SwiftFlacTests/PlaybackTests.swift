@@ -185,6 +185,8 @@ struct PlaybackTests {
         player.play(tracks[0], in: tracks)
         await gate.waitUntilEntered()
         #expect(player.nowPlayingSource == nil)
+        // Scanned tags fill in while metadata loads, so the credits never blank.
+        #expect(player.displayArtist == "Artist" && player.displayAlbum == "Album")
         let oldMetadata = player.metadataTask
         player.next()
         try await eventually { player.nowPlaying.title == "Current" }
