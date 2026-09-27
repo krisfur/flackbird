@@ -12,6 +12,8 @@ Minimalist local music player for iOS, iPadOS, and macOS. Built with `SwiftUI` a
 
 WAV and AIFF files typically carry no embedded tags or cover art, so they show up with filename-based titles and a placeholder cover.
 
+The now-playing screen can show each file's format, bit depth, sample rate, and bitrate, for example `FLAC · 24-bit / 96 kHz · 2,304 kbps` (toggle in Settings).
+
 
 Folders are playlists: point it at a music folder and each subfolder becomes a playlist, with album, artist, and all-track views built from the files' own tags and embedded cover art.
 

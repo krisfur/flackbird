@@ -167,6 +167,11 @@ struct ToggleIcon: View {
     }
 }
 
+private struct ArtworkSource: Equatable {
+    let track: URL?
+    let data: Data?
+}
+
 struct NowPlayingView: View {
     @Environment(PlayerController.self) private var player
     @Environment(MusicLibrary.self) private var library
@@ -175,6 +180,7 @@ struct NowPlayingView: View {
     @State private var artwork: Image?
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
+    @AppStorage("showAudioQuality") private var showAudioQuality = true
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -223,7 +229,9 @@ struct NowPlayingView: View {
         .background(AppBackground())
         // Full resolution here - this is the one place artwork is shown big -
         // but decoded once per track, not on every tick of the scrubber.
-        .task(id: player.nowPlaying.artworkData) {
+        .task(id: ArtworkSource(track: player.nowPlayingSource, data: player.nowPlaying.artworkData)) {
+            // Metadata is empty while the next track loads; keep the old cover instead of flashing the placeholder.
+            guard player.nowPlayingSource != nil else { return }
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)
@@ -325,6 +333,13 @@ struct NowPlayingView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            if showAudioQuality, let quality = player.audioQuality {
+                Text(quality.summary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .padding(.horizontal)
     }

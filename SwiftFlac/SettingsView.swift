@@ -19,6 +19,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
+    @AppStorage("showAudioQuality") private var showAudioQuality = true
     @State private var showingFolderPicker = false
 
     private static let repositoryURL = URL(string: "https://github.com/krisfur/swiftflac")!
@@ -48,6 +49,9 @@ struct SettingsView: View {
                             Text(appearance.label).tag(appearance.rawValue)
                         }
                     }
+                    Toggle("Show Audio Quality", isOn: $showAudioQuality)
+                } footer: {
+                    Text("Shows the file's format, resolution, and bitrate under the scrubber. AirPlay and Bluetooth may play it at a different quality.")
                 }
 
                 // Apps can't read or flip the Siri switch; this opens the Shortcuts page that has it.
@@ -56,11 +60,13 @@ struct SettingsView: View {
                         // .automatic contrasts with the background; match it, outlined to stay visible.
                         ShortcutsLink()
                             .shortcutsLinkStyle(colorScheme == .dark ? .darkOutline : .lightOutline)
+                            .frame(maxWidth: .infinity)
                     #else
                         // ShortcutsLink is iOS-only; this opens the Shortcuts app instead of SwiftFlac's page.
                         Link(destination: URL(string: "shortcuts://")!) {
                             Label("Open Shortcuts", systemImage: "square.2.layers.3d")
                         }
+                        .frame(maxWidth: .infinity)
                     #endif
                 } header: {
                     Text("Siri & Shortcuts")

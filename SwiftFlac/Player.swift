@@ -51,6 +51,9 @@ final class PlayerController {
     private(set) var currentIndex: Int?
     private(set) var isPlaying = false
     private(set) var nowPlaying = TrackMetadata()
+    /// The track `nowPlaying` describes; nil while a new track's metadata loads.
+    private(set) var nowPlayingSource: URL?
+    private(set) var audioQuality: AudioQuality?
     private(set) var isShuffling = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var currentTime: TimeInterval = 0
@@ -60,6 +63,7 @@ final class PlayerController {
     private let defaults: UserDefaults
     private let systemIntegration: Bool
     private let metadataLoader: @Sendable (Track) async -> TrackMetadata
+    private let qualityLoader: @Sendable (URL) async -> AudioQuality?
     private let durationLoader: @MainActor (AVPlayerItem) async -> Double
     private let playbackActivation: PlaybackActivation
     private let now: () -> Date
@@ -112,6 +116,7 @@ final class PlayerController {
         systemIntegration: Bool = true,
         activate: @escaping @Sendable () async throws -> Void = PlaybackAudioSession.activate,
         metadataLoader: @escaping @Sendable (Track) async -> TrackMetadata = loadMetadata,
+        qualityLoader: @escaping @Sendable (URL) async -> AudioQuality? = AudioQuality.read,
         durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
             await (try? $0.asset.load(.duration))?.seconds ?? 0
         },
@@ -121,6 +126,7 @@ final class PlayerController {
         self.defaults = defaults
         self.systemIntegration = systemIntegration
         self.metadataLoader = metadataLoader
+        self.qualityLoader = qualityLoader
         self.durationLoader = durationLoader
         self.now = now
         playbackActivation = PlaybackActivation(activate: activate)
@@ -539,17 +545,24 @@ final class PlayerController {
             return
         }
         nowPlaying = TrackMetadata()
+        nowPlayingSource = nil
+        audioQuality = nil
         updateNowPlayingInfo()
         metadataTask = Task {
             let metadata = await metadataLoader(track)
             guard item === player.currentItem else { return }
             nowPlaying = metadata
+            nowPlayingSource = track.url
             updateNowPlayingInfo()
             // AirPlay receivers read metadata from the item itself, not
             // from MPNowPlayingInfoCenter. (iOS-only API.)
             #if os(iOS)
                 item.externalMetadata = externalMetadata(for: track)
             #endif
+            // After the metadata, so it never competes with loading the cover.
+            let quality = await qualityLoader(track.url)
+            guard item === player.currentItem else { return }
+            audioQuality = quality
         }
     }
 
