@@ -44,6 +44,36 @@ enum FlacMetadata {
         return metadata
     }
 
+    /// Reads STREAMINFO, which the format requires as the first block. The bitrate
+    /// counts only the audio frames, so tags and cover art don't inflate it.
+    static func quality(from url: URL) -> AudioQuality? {
+        guard let file = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? file.close() }
+        guard let magic = try? file.read(upToCount: 4), magic == Data("fLaC".utf8),
+              let header = try? file.read(upToCount: 4), header.count == 4, header[0] & 0x7F == 0,
+              let info = try? file.read(upToCount: 34), info.count == 34 else { return nil }
+        // Bytes 10-17: sample rate (20 bits), channels - 1 (3), bits per sample - 1 (5), total samples (36).
+        let packed = info[10 ..< 18].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        let sampleRate = Double(packed >> 44)
+        let bitDepth = Int((packed >> 36) & 0x1F) + 1
+        let totalSamples = Double(packed & 0xF_FFFF_FFFF)
+        guard sampleRate > 0 else { return nil }
+
+        var isLast = header[0] & 0x80 != 0
+        while !isLast {
+            guard let next = try? file.read(upToCount: 4), next.count == 4, let offset = try? file.offset() else { return nil }
+            isLast = next[0] & 0x80 != 0
+            let length = UInt64(next[1]) << 16 | UInt64(next[2]) << 8 | UInt64(next[3])
+            guard (try? file.seek(toOffset: offset + length)) != nil else { return nil }
+        }
+        var kilobits: Int?
+        if totalSamples > 0, let audioStart = try? file.offset(), let end = try? file.seekToEnd(), end > audioStart {
+            let seconds = totalSamples / sampleRate
+            kilobits = Int((Double(end - audioStart) * 8 / seconds / 1000).rounded())
+        }
+        return AudioQuality(format: "FLAC", bitDepth: bitDepth, sampleRate: sampleRate, kilobitsPerSecond: kilobits)
+    }
+
     private static func parseVorbisComments(_ block: Data, into metadata: inout TrackMetadata) {
         var cursor = 0
         func readLE32() -> Int? {

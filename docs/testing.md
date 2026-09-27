@@ -8,7 +8,7 @@ xcodebuild test -project SwiftFlac.xcodeproj -scheme SwiftFlac -testPlan Core -d
 
 Use a macOS CI runner with Xcode installed. The tests use isolated temporary files and preferences. The application test host starts without scanning the user's library or registering system playback handlers. Audio integration checks load and decode fixtures without playing them, so they need no audio device, physical phone, or external dependencies.
 
-The suite covers eight areas, with parameterized cases for formats and malformed inputs:
+The suite covers nine areas, with parameterized cases for formats and malformed inputs:
 
 - Metadata: FLAC tags, cover selection, malformed blocks, and tags from other audio formats.
 - Library: discovery, nested folders, grouping, deduplication, refresh, stale scans, and security-scope balancing.
@@ -17,6 +17,7 @@ The suite covers eight areas, with parameterized cases for formats and malformed
 - Persistence: paused session restore, relocated roots, missing tracks, invalid state, and library cache recovery.
 - Navigation/search policy: punctuation and accent folding, title precedence, and destination restoration.
 - Artwork: bounded thumbnails, fallback, caching, and canceled loads.
+- Audio quality: format, bit depth, sample rate, and bitrate for each supported format.
 - Siri and Shortcuts: library item listing and matching, and playing or shuffling an item.
 
 This covers application logic and audio-file integration, not button interactions, gestures, or OS delivery of lock-screen/AirPlay events. Those remain manual checks. There is no coverage-percentage target or testing of trivial getters and framework internals.

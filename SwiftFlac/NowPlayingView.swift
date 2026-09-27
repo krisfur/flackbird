@@ -175,6 +175,7 @@ struct NowPlayingView: View {
     @State private var artwork: Image?
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
+    @AppStorage("showAudioQuality") private var showAudioQuality = true
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -325,6 +326,13 @@ struct NowPlayingView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            if showAudioQuality, let quality = player.audioQuality {
+                Text(quality.summary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .padding(.horizontal)
     }
