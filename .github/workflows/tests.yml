@@ -1,0 +1,61 @@
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SWIFTFORMAT_VERSION: 0.63.0
+      SWIFTFORMAT_SHA256: b4a3cbb8c852a0baaf9adf853e221ff1dabf921a3d8957a602e0bda3af8470f1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install SwiftFormat
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/swiftformat.zip" \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/$SWIFTFORMAT_VERSION/swiftformat_linux.zip"
+          echo "$SWIFTFORMAT_SHA256  $RUNNER_TEMP/swiftformat.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/swiftformat.zip" -d "$RUNNER_TEMP/swiftformat"
+          chmod +x "$RUNNER_TEMP/swiftformat/swiftformat_linux"
+      - name: Check formatting
+        run: '"$RUNNER_TEMP/swiftformat/swiftformat_linux" SwiftFlac Tests --lint --reporter github-actions-log'
+
+  core:
+    name: Core tests
+    # Preview image; releases are built with Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run unit and integration tests
+        run: >-
+          xcodebuild test
+          -project SwiftFlac.xcodeproj
+          -scheme SwiftFlac
+          -testPlan Core
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+      - name: Build app and tests for iOS
+        run: >-
+          xcodebuild build-for-testing
+          -project SwiftFlac.xcodeproj
+          -scheme SwiftFlac
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO

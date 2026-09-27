@@ -60,6 +60,18 @@ A free Apple ID is enough, no paid developer account needed:
 
 Free-account builds expire after 7 days; hit Run again to re-sign. Add music via Finder file sharing (iPhone → Files → SwiftFlac) and rescan from the ⋯ menu.
 
+## Tests
+
+In Xcode, select the SwiftFlac scheme and press Command-U. The default Core plan tests metadata, audio formats, library discovery/grouping, playback, persistence, search/navigation policy, and artwork with isolated files and preferences.
+
+```sh
+xcodebuild test -project SwiftFlac.xcodeproj -scheme SwiftFlac -testPlan Core -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+```
+
+GitHub Actions runs this suite, an iOS Simulator build, and a SwiftFormat lint check for pull requests targeting `main`, using GitHub's Xcode 27 preview runner. No UI automation, physical phone, or developer account is required. See [test scope](docs/testing.md).
+
+Formatting is checked with SwiftFormat 0.63.0; run `swiftformat SwiftFlac Tests --lint` locally, or drop `--lint` to apply fixes.
+
 ## License
 
 MIT - see [LICENSE](LICENSE).

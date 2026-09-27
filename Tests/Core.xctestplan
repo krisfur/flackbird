@@ -1,0 +1,32 @@
+{
+  "configurations": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "SWIFTFLAC_TEST_MODE",
+        "value": "unit",
+        "isEnabled": true
+      }
+    ],
+    "testTimeoutsEnabled": true,
+    "defaultTestExecutionTimeAllowance": 60,
+    "maximumTestExecutionTimeAllowance": 120
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:SwiftFlac.xcodeproj",
+        "identifier": "AE5700000000000000000064",
+        "name": "SwiftFlacTests"
+      },
+      "parallelizable": false
+    }
+  ],
+  "version": 1
+}

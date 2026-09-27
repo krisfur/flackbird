@@ -77,10 +77,12 @@ struct NowPlayingBar: View {
         // The bar redraws twice a second as the progress line advances, so
         // the thumbnail is resolved once per track instead of in body.
         .task(id: player.currentTrack?.url) {
-            artwork = await ArtworkStore.shared.thumbnail(
+            let loaded = await ArtworkStore.shared.thumbnail(
                 for: player.currentTrack,
                 maxPixelSize: Int(40 * displayScale)
             )
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }
@@ -225,12 +227,12 @@ struct NowPlayingView: View {
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)
-            .frame(minWidth: 420, minHeight: 540)
-            .overlay(alignment: .topTrailing) {
-                AirPlayButton(player: player.routePickerPlayer)
-                    .frame(width: 24, height: 24)
-                    .padding(12)
-            }
+        .frame(minWidth: 420, minHeight: 540)
+        .overlay(alignment: .topTrailing) {
+            AirPlayButton(player: player.routePickerPlayer)
+                .frame(width: 24, height: 24)
+                .padding(12)
+        }
         #endif
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -359,7 +361,7 @@ struct NowPlayingView: View {
 
     private var subtitle: String {
         [player.nowPlaying.artist, player.nowPlaying.album]
-            .compactMap { $0 }
+            .compactMap(\.self)
             .joined(separator: " - ")
     }
 
@@ -370,7 +372,7 @@ struct NowPlayingView: View {
 
 #if os(iOS)
     struct AirPlayButton: UIViewRepresentable {
-        let player: AVPlayer
+        let player: AVPlayer?
 
         func makeUIView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
@@ -384,7 +386,7 @@ struct NowPlayingView: View {
     }
 #else
     struct AirPlayButton: NSViewRepresentable {
-        let player: AVPlayer
+        let player: AVPlayer?
 
         func makeNSView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
@@ -470,7 +472,7 @@ final class GoToMenuController {
             Coordinator()
         }
 
-        func makeUIView(context: Context) -> UIButton {
+        func makeUIView(context _: Context) -> UIButton {
             let button = UIButton(type: .custom)
             button.showsMenuAsPrimaryAction = true
             // A menu with no room below it opens upward, and UIKit reverses

@@ -34,6 +34,16 @@ extension String {
     }
 }
 
+enum LibrarySearch {
+    /// Names first; if nothing matches, fall back to the artist so an
+    /// artist's name pulls up their items.
+    static func filter<Item>(_ items: [Item], query: String, name: (Item) -> String, artist: (Item) -> String?) -> [Item] {
+        guard !query.isEmpty else { return items }
+        let byName = items.filter { name($0).matchesSearch(query) }
+        return byName.isEmpty ? items.filter { artist($0)?.matchesSearch(query) == true } : byName
+    }
+}
+
 extension View {
     /// Hides the on-screen keyboard as soon as the user scrolls the
     /// content below the search field.
@@ -175,15 +185,8 @@ struct AlbumsView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
 
-    /// Album names first; if nothing matches, fall back to the artist so
-    /// an artist's name pulls up their albums.
     private var filteredAlbums: [Album] {
-        guard !searchText.isEmpty else { return library.albums }
-        let byName = library.albums.filter { $0.name.matchesSearch(searchText) }
-        if !byName.isEmpty {
-            return byName
-        }
-        return library.albums.filter { $0.artist?.matchesSearch(searchText) == true }
+        LibrarySearch.filter(library.albums, query: searchText, name: \.name, artist: \.artist)
     }
 
     var body: some View {
@@ -251,17 +254,19 @@ struct AlbumCell: View {
                 .lineLimit(1)
         }
         .task(id: album.id) {
-            artwork = await ArtworkStore.shared.thumbnail(
+            let loaded = await ArtworkStore.shared.thumbnail(
                 for: album.tracks.first,
                 maxPixelSize: Int(Self.drawnSize * displayScale)
             )
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }
 
 /// Boxes a decoded thumbnail: NSCache needs a class, and the decode happens
 /// off the main actor. Immutable, so handing it across is safe.
-private final class Thumbnail: @unchecked Sendable {
+final class Thumbnail: @unchecked Sendable {
     let image: CGImage
     let cost: Int
 
@@ -273,7 +278,7 @@ private final class Thumbnail: @unchecked Sendable {
 
 /// Decodes straight to a thumbnail no larger than `maxPixelSize`, so a 1400px
 /// cover never becomes a full-size bitmap to fill a 40pt row.
-private func downsampled(_ data: Data, maxPixelSize: Int) -> Thumbnail? {
+func downsampled(_ data: Data, maxPixelSize: Int) -> Thumbnail? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
     guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
     let options = [
@@ -302,7 +307,12 @@ final class ArtworkStore {
     private static let costLimit = 32 * 1024 * 1024
     private static let missLimit = 4096
 
-    private init() {
+    private let loadArtwork: @Sendable (URL) async -> Data?
+
+    init(loadArtwork: @escaping @Sendable (URL) async -> Data? = {
+        await loadMetadata(from: $0, includeArtwork: true).artworkData
+    }) {
+        self.loadArtwork = loadArtwork
         cache.totalCostLimit = Self.costLimit
     }
 
@@ -317,8 +327,9 @@ final class ArtworkStore {
         if misses.contains(url) {
             return nil
         }
+        let loadArtwork = loadArtwork
         let thumbnail = await Task.detached(priority: .utility) { () -> Thumbnail? in
-            guard let data = await loadMetadata(from: url, includeArtwork: true).artworkData else { return nil }
+            guard let data = await loadArtwork(url) else { return nil }
             return downsampled(data, maxPixelSize: maxPixelSize)
         }.value
         guard let thumbnail else {
@@ -327,6 +338,7 @@ final class ArtworkStore {
             }
             return nil
         }
+        // Callers drop results for canceled tasks; the cache still keeps the decode.
         cache.setObject(thumbnail, forKey: key, cost: thumbnail.cost)
         return Image(decorative: thumbnail.image, scale: 1)
     }

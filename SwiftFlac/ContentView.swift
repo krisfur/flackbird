@@ -39,15 +39,22 @@ enum LibraryDestination: Hashable {
 /// declared with both.
 typealias LibraryNavigate = @MainActor @Sendable (LibraryDestination) -> Void
 
-private struct LibraryNavigateKey: EnvironmentKey {
-    static let defaultValue: LibraryNavigate = { _ in }
+/// Always equal, like SwiftUI's own actions: the closure only writes ContentView's
+/// @State, so a fresh copy per update must not invalidate every reader.
+struct LibraryNavigateAction: Equatable, Sendable {
+    let navigate: LibraryNavigate
+
+    @MainActor func callAsFunction(_ destination: LibraryDestination) {
+        navigate(destination)
+    }
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
 }
 
 extension EnvironmentValues {
-    var libraryNavigate: LibraryNavigate {
-        get { self[LibraryNavigateKey.self] }
-        set { self[LibraryNavigateKey.self] = newValue }
-    }
+    @Entry var libraryNavigate = LibraryNavigateAction { _ in }
 }
 
 #if os(iOS)
@@ -319,12 +326,12 @@ struct ContentView: View {
             }
         }
         #endif
-        .environment(\.libraryNavigate) { destination in
+        .environment(\.libraryNavigate, LibraryNavigateAction { destination in
             #if os(macOS)
                 showingNowPlaying = false
             #endif
             path.append(destination)
-        }
+        })
         // Pick up where the last session left off, paused, as soon as any
         // content is available - the launch-time cache makes this nearly
         // instant; a fresh scan (first launch) arrives seconds later.
@@ -344,22 +351,12 @@ struct ContentView: View {
 
     /// Paths persist relative to the library root: the app's container
     /// path (and any absolute path in it) changes across app updates.
-    private func rootRelativePath(_ url: URL) -> String {
-        guard let root = library.rootURL?.path, url.path.hasPrefix(root) else { return url.path }
-        return String(url.path.dropFirst(root.count))
-    }
-
     private func persistenceToken(for destination: LibraryDestination) -> String {
-        switch destination {
-        case let .playlist(playlist): "playlist|\(rootRelativePath(playlist.folderURL))"
-        case let .album(album): "album|\(album.id)"
-        case let .artist(artist): "artist|\(artist.name)"
-        case .nowPlaying: "nowPlaying"
-        }
+        NavigationPersistence.token(for: destination, root: library.rootURL)
     }
 
     private func saveNavigation() {
-        let defaults = UserDefaults.standard
+        let defaults = library.defaults
         defaults.set(mode?.rawValue, forKey: Self.navModeKey)
         defaults.set(path.map(persistenceToken(for:)), forKey: Self.navPathKey)
         defaults.set(forwardStack.map(persistenceToken(for:)), forKey: Self.navForwardKey)
@@ -375,26 +372,15 @@ struct ContentView: View {
     }
 
     private func resolveDestination(_ token: String) -> LibraryDestination? {
-        let parts = token.split(separator: "|", maxSplits: 1)
-        guard let kind = parts.first else { return nil }
-        let value = parts.count > 1 ? String(parts[1]) : ""
-        switch kind {
-        case "playlist":
-            return library.playlists.first { rootRelativePath($0.folderURL) == value }.map(LibraryDestination.playlist)
-        case "album":
-            return library.albums.first { $0.id == value }.map(LibraryDestination.album)
-        case "artist":
-            return library.artists.first { $0.name == value }.map(LibraryDestination.artist)
-        case "nowPlaying":
-            return .nowPlaying
-        default:
-            return nil
-        }
+        NavigationPersistence.resolve(token, content: LibraryContent(
+            playlists: library.playlists, albums: library.albums,
+            artists: library.artists, allTracks: library.allTracks
+        ), root: library.rootURL)
     }
 
     private func attemptRestore() {
         guard !library.playlists.isEmpty else { return }
-        player.libraryRootPath = library.rootURL?.path
+        player.libraryRoot = library.rootURL
         player.restoreSession(from: library.playlists.flatMap(\.tracks))
         restoreNavigationIfNeeded()
     }
@@ -405,35 +391,27 @@ struct ContentView: View {
         #if os(iOS)
             guard !hasRestoredNavigation else { return }
             hasRestoredNavigation = true
-            let defaults = UserDefaults.standard
+            let defaults = library.defaults
             guard let modeRaw = defaults.string(forKey: Self.navModeKey),
                   let savedMode = BrowseMode(rawValue: modeRaw) else { return }
 
-            var restoredPath: [LibraryDestination] = []
-            for token in defaults.stringArray(forKey: Self.navPathKey) ?? [] {
-                guard let destination = resolveDestination(token) else { break }
-                restoredPath.append(destination)
-            }
+            var restoredPath = NavigationPersistence.restoredPath(
+                defaults.stringArray(forKey: Self.navPathKey) ?? [], resolve: resolveDestination
+            )
             var restoredForward = (defaults.stringArray(forKey: Self.navForwardKey) ?? [])
                 .compactMap(resolveDestination)
-                .filter { $0 != .nowPlaying || player.currentTrack != nil }
             // Launch-time pushes of the now-playing screen are unreliable on
             // device, so it is never auto-pushed: it moves to the top of the
             // forward stack instead, one bar tap or forward swipe away.
-            if restoredPath.last == .nowPlaying {
-                restoredPath.removeLast()
-                if player.currentTrack != nil {
-                    restoredForward.append(.nowPlaying)
-                }
-            }
+            NavigationPersistence.deferNowPlaying(
+                path: &restoredPath, forward: &restoredForward, hasTrack: player.currentTrack != nil
+            )
             if player.currentTrack != nil,
                let originModeRaw = defaults.string(forKey: Self.navOriginModeKey)
             {
-                var originPath: [LibraryDestination] = []
-                for token in defaults.stringArray(forKey: Self.navOriginPathKey) ?? [] {
-                    guard let destination = resolveDestination(token) else { break }
-                    originPath.append(destination)
-                }
+                let originPath = NavigationPersistence.restoredPath(
+                    defaults.stringArray(forKey: Self.navOriginPathKey) ?? [], resolve: resolveDestination
+                )
                 playbackOrigin = (BrowseMode(rawValue: originModeRaw), originPath)
             }
 
@@ -715,15 +693,8 @@ struct TrackListView: View {
     var onPlay: () -> Void = {}
     @State private var searchText = ""
 
-    /// Titles first; if nothing matches, fall back to the artist so an
-    /// artist's name pulls up their songs.
     private var filteredTracks: [Track] {
-        guard !searchText.isEmpty else { return tracks }
-        let byTitle = tracks.filter { $0.displayTitle.matchesSearch(searchText) }
-        if !byTitle.isEmpty {
-            return byTitle
-        }
-        return tracks.filter { $0.artist?.matchesSearch(searchText) == true }
+        LibrarySearch.filter(tracks, query: searchText, name: \.displayTitle, artist: \.artist)
     }
 
     var body: some View {
@@ -792,7 +763,9 @@ struct TrackRow: View {
             Spacer()
         }
         .task(id: track.url) {
-            artwork = await ArtworkStore.shared.thumbnail(for: track, maxPixelSize: Int(40 * displayScale))
+            let loaded = await ArtworkStore.shared.thumbnail(for: track, maxPixelSize: Int(40 * displayScale))
+            guard !Task.isCancelled else { return }
+            artwork = loaded
         }
     }
 }

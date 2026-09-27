@@ -27,8 +27,9 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
-      <Testables>
-      </Testables>
+      <TestPlans>
+         <TestPlanReference reference="container:Tests/Core.xctestplan" default="YES"/>
+      </TestPlans>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Release"

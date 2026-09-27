@@ -24,7 +24,7 @@ private struct DetachedArtwork: @unchecked Sendable {
     #endif
 
     var mediaItemArtwork: MPMediaItemArtwork {
-        MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in self.image }
+        MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 }
 
@@ -40,26 +40,33 @@ final class PlayerController {
     private(set) var currentTime: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
 
-    private let player = AVPlayer()
+    private let player: any PlaybackTransport
+    private let defaults: UserDefaults
+    private let systemIntegration: Bool
+    private let metadataLoader: @Sendable (Track) async -> TrackMetadata
+    private let durationLoader: @MainActor (AVPlayerItem) async -> Double
+    private let playbackActivation: PlaybackActivation
+    private let now: () -> Date
+    private var seekGeneration = 0
+    @ObservationIgnored private(set) var nowPlayingInfo: [String: Any]?
+    private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
     /// The macOS route picker needs the player reference to offer AirPlay.
-    var routePickerPlayer: AVPlayer {
-        player
+    var routePickerPlayer: AVPlayer? {
+        player.avPlayer
     }
 
     private var originalQueue: [Track] = []
     private var timeObserver: Any?
     private var isSeeking = false
+    @ObservationIgnored private(set) var metadataTask: Task<Void, Never>?
     private var statusObservation: NSKeyValueObservation?
     private var consecutiveFailures = 0
-    #if os(iOS)
-        private var resumeAfterInterruption = false
-        private let playbackActivation = PlaybackActivation(activate: PlaybackAudioSession.activate)
-        private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
-    #endif
+    private var resumeAfterInterruption = false
 
     private static let shuffleKey = "playerShuffle"
     private static let repeatKey = "playerRepeatMode"
     private static let sessionQueueKey = "sessionQueuePaths"
+    private static let sessionOriginalQueueKey = "sessionOriginalQueuePaths"
     private static let sessionTrackKey = "sessionTrackPath"
     private static let sessionTimeKey = "sessionTime"
 
@@ -68,11 +75,10 @@ final class PlayerController {
 
     /// Set before session restore; sessions persist root-relative paths
     /// because the app's container path changes across updates.
-    var libraryRootPath: String?
+    var libraryRoot: URL?
 
     private func sessionKey(for url: URL) -> String {
-        guard let root = libraryRootPath, url.path.hasPrefix(root) else { return url.path }
-        return String(url.path.dropFirst(root.count))
+        NavigationPersistence.relativePath(url, root: libraryRoot)
     }
 
     var currentTrack: Track? {
@@ -84,10 +90,28 @@ final class PlayerController {
         nowPlaying.title ?? currentTrack?.displayTitle ?? ""
     }
 
-    init() {
-        isShuffling = UserDefaults.standard.bool(forKey: Self.shuffleKey)
-        repeatMode = UserDefaults.standard.string(forKey: Self.repeatKey)
+    init(
+        transport: (any PlaybackTransport)? = nil,
+        defaults: UserDefaults = .standard,
+        systemIntegration: Bool = true,
+        activate: @escaping @Sendable () async throws -> Void = PlaybackAudioSession.activate,
+        metadataLoader: @escaping @Sendable (Track) async -> TrackMetadata = loadMetadata,
+        durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
+            await (try? $0.asset.load(.duration))?.seconds ?? 0
+        },
+        now: @escaping () -> Date = Date.init
+    ) {
+        player = transport ?? AVPlayer()
+        self.defaults = defaults
+        self.systemIntegration = systemIntegration
+        self.metadataLoader = metadataLoader
+        self.durationLoader = durationLoader
+        self.now = now
+        playbackActivation = PlaybackActivation(activate: activate)
+        isShuffling = defaults.bool(forKey: Self.shuffleKey)
+        repeatMode = defaults.string(forKey: Self.repeatKey)
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
+        guard systemIntegration, let livePlayer = player.avPlayer else { return }
         configureRemoteCommands()
         #if os(macOS)
             // Focused lists swallow bare Space (scroll page-down) before menu
@@ -112,16 +136,12 @@ final class PlayerController {
             }
         #endif
 
-        timeObserver = player.addPeriodicTimeObserver(
+        timeObserver = livePlayer.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated {
-                guard let self, !self.isSeeking else { return }
-                self.currentTime = time.seconds
-                if Date().timeIntervalSince(self.lastSessionSave) > 5 {
-                    self.saveSession()
-                }
+                self?.updatePlaybackTime(time.seconds)
             }
         }
         NotificationCenter.default.addObserver(
@@ -171,27 +191,23 @@ final class PlayerController {
         #endif
     }
 
-    #if os(iOS)
-        private func handleInterruption(began: Bool, shouldResume: Bool) {
-            if began {
-                guard isPlaying else { return }
-                resumeAfterInterruption = true
-                pausePlayback()
-            } else {
-                let resume = resumeAfterInterruption && shouldResume
-                resumeAfterInterruption = false
-                // Interruptions that end without shouldResume (another app
-                // took over as the primary audio source) stay paused.
-                guard resume, currentTrack != nil else { return }
-                resumePlayback()
-            }
+    func handleInterruption(began: Bool, shouldResume: Bool) {
+        if began {
+            guard isPlaying else { return }
+            resumeAfterInterruption = true
+            pausePlayback()
+        } else {
+            let resume = resumeAfterInterruption && shouldResume
+            resumeAfterInterruption = false
+            // Interruptions that end without shouldResume (another app
+            // took over as the primary audio source) stay paused.
+            guard resume, currentTrack != nil else { return }
+            resumePlayback()
         }
-    #endif
+    }
 
     private func pausePlayback() {
-        #if os(iOS)
-            playbackActivation.cancel()
-        #endif
+        playbackActivation.cancel()
         player.pause()
         isPlaying = false
         updateNowPlayingInfo()
@@ -203,24 +219,22 @@ final class PlayerController {
         // Reflect the requested state immediately so Pause also works while
         // activation is pending. AVPlayer starts only after activation succeeds.
         isPlaying = true
-        #if os(iOS)
-            playbackActivation.request { [weak self] in
-                guard let self, self.isPlaying, item === self.player.currentItem else { return }
-                self.player.play()
-                self.updateNowPlayingInfo()
-            } onFailure: { [weak self] error in
-                guard let self, item === self.player.currentItem else { return }
-                self.pausePlayback()
-                Self.logger.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")
-            }
-        #else
+        playbackActivation.request { [weak self] in
+            guard let self, isPlaying, item === player.currentItem else { return }
             player.play()
-        #endif
+            updateNowPlayingInfo()
+        } onFailure: { [weak self] error in
+            guard let self, item === player.currentItem else { return }
+            pausePlayback()
+            Self.logger.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")
+        }
         updateNowPlayingInfo()
         saveSession()
     }
 
     func play(_ track: Track, in tracks: [Track]) {
+        guard tracks.contains(track) else { return }
+        consecutiveFailures = 0
         originalQueue = tracks
         if isShuffling {
             var rest = tracks.filter { $0 != track }
@@ -236,7 +250,7 @@ final class PlayerController {
 
     func toggleShuffle() {
         isShuffling.toggle()
-        UserDefaults.standard.set(isShuffling, forKey: Self.shuffleKey)
+        defaults.set(isShuffling, forKey: Self.shuffleKey)
         guard let current = currentTrack else { return }
         if isShuffling {
             var rest = queue.filter { $0 != current }
@@ -247,6 +261,7 @@ final class PlayerController {
             queue = originalQueue
             currentIndex = originalQueue.firstIndex(of: current)
         }
+        saveSession()
     }
 
     func cycleRepeatMode() {
@@ -255,7 +270,7 @@ final class PlayerController {
         case .all: repeatMode = .one
         case .one: repeatMode = .off
         }
-        UserDefaults.standard.set(repeatMode.rawValue, forKey: Self.repeatKey)
+        defaults.set(repeatMode.rawValue, forKey: Self.repeatKey)
     }
 
     func togglePlayPause() {
@@ -281,10 +296,14 @@ final class PlayerController {
     }
 
     func seek(to time: TimeInterval) {
-        guard player.currentItem != nil else { return }
+        guard let item = player.currentItem, time.isFinite else { return }
+        seekGeneration += 1
+        let generation = seekGeneration
         // Scrubbing into the last second means jump straight to the
         // end-of-track behaviour.
         if duration > 0, time >= duration - 1 {
+            // The bump above orphans any in-flight seek, and stopping at the queue end starts none.
+            isSeeking = false
             trackFinished()
             return
         }
@@ -301,7 +320,8 @@ final class PlayerController {
             toleranceAfter: .zero
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, item === self.player.currentItem,
+                      generation == self.seekGeneration else { return }
                 self.isSeeking = false
                 // Republish once the seek lands: the tolerance means the
                 // player can settle before the target, and nothing else
@@ -309,9 +329,18 @@ final class PlayerController {
                 let landed = self.player.currentTime().seconds
                 self.currentTime = landed.isFinite ? landed : target
                 self.updateNowPlayingInfo()
+                self.saveSessionTime()
             }
         }
         updateNowPlayingInfo()
+    }
+
+    func updatePlaybackTime(_ seconds: Double) {
+        guard !isSeeking, seconds.isFinite else { return }
+        currentTime = max(0, seconds)
+        if now().timeIntervalSince(lastSessionSave) > 5 {
+            saveSessionTime()
+        }
     }
 
     private func advance(by offset: Int) {
@@ -332,7 +361,7 @@ final class PlayerController {
     /// A track that cannot play behaves like one that ended, except it is
     /// never retried (repeat-one would loop on it forever), and a queue
     /// where every track fails stops instead of skip-looping.
-    private func currentTrackFailed() {
+    func currentTrackFailed() {
         consecutiveFailures += 1
         guard consecutiveFailures < max(queue.count, 1) else {
             pausePlayback()
@@ -341,8 +370,11 @@ final class PlayerController {
         advance(by: 1)
     }
 
-    private func trackFinished() {
+    func trackFinished() {
         if repeatMode == .one {
+            guard let item = player.currentItem else { return }
+            seekGeneration += 1
+            let generation = seekGeneration
             // The seek is async: publishing the reset before it lands leaves
             // the lock screen stuck at the end of the track, so republish from
             // the completion handler once the player really is back at zero.
@@ -350,7 +382,8 @@ final class PlayerController {
             currentTime = 0
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, item === self.player.currentItem,
+                          generation == self.seekGeneration else { return }
                     self.isSeeking = false
                     self.currentTime = 0
                     self.updateNowPlayingInfo()
@@ -369,9 +402,10 @@ final class PlayerController {
         guard !hasRestoredSession else { return }
         hasRestoredSession = true
         guard currentTrack == nil,
-              let savedTrackPath = UserDefaults.standard.string(forKey: Self.sessionTrackKey) else { return }
-        let savedQueuePaths = UserDefaults.standard.stringArray(forKey: Self.sessionQueueKey) ?? []
-        let savedTime = UserDefaults.standard.double(forKey: Self.sessionTimeKey)
+              let savedTrackPath = defaults.string(forKey: Self.sessionTrackKey) else { return }
+        let savedQueuePaths = defaults.stringArray(forKey: Self.sessionQueueKey) ?? []
+        let rawTime = defaults.double(forKey: Self.sessionTimeKey)
+        let savedTime = rawTime.isFinite ? max(0, rawTime) : 0
 
         let byPath = Dictionary(tracks.map { (sessionKey(for: $0.url), $0) }, uniquingKeysWith: { first, _ in first })
         let restoredQueue = savedQueuePaths.compactMap { byPath[$0] }
@@ -379,17 +413,26 @@ final class PlayerController {
               let index = restoredQueue.firstIndex(of: track) else { return }
 
         queue = restoredQueue
-        originalQueue = restoredQueue
+        let originalPaths = defaults.stringArray(forKey: Self.sessionOriginalQueueKey) ?? savedQueuePaths
+        let restoredOriginal = originalPaths.compactMap { byPath[$0] }
+        originalQueue = Set(restoredOriginal.map(\.url)) == Set(restoredQueue.map(\.url))
+            ? restoredOriginal : restoredQueue
         currentIndex = index
         startCurrentTrack(paused: true, startTime: savedTime)
     }
 
     private func saveSession() {
         guard let track = currentTrack else { return }
-        lastSessionSave = Date()
-        let defaults = UserDefaults.standard
         defaults.set(queue.map { sessionKey(for: $0.url) }, forKey: Self.sessionQueueKey)
+        defaults.set(originalQueue.map { sessionKey(for: $0.url) }, forKey: Self.sessionOriginalQueueKey)
         defaults.set(sessionKey(for: track.url), forKey: Self.sessionTrackKey)
+        saveSessionTime()
+    }
+
+    /// Progress and seeks only move the time; the queue is saved when it changes.
+    private func saveSessionTime() {
+        guard currentTrack != nil else { return }
+        lastSessionSave = now()
         defaults.set(currentTime, forKey: Self.sessionTimeKey)
     }
 
@@ -413,9 +456,8 @@ final class PlayerController {
                 }
             }
         }
-        #if os(iOS)
-            playbackActivation.cancel()
-        #endif
+        playbackActivation.cancel()
+        seekGeneration += 1
         // Replacing an item on a running AVPlayer can start it immediately.
         // Hold playback until the new request has activated the audio session.
         player.pause()
@@ -426,7 +468,8 @@ final class PlayerController {
                 player.seek(
                     to: CMTime(seconds: startTime, preferredTimescale: 600),
                     toleranceBefore: .positiveInfinity,
-                    toleranceAfter: .zero
+                    toleranceAfter: .zero,
+                    completionHandler: { _ in }
                 )
             }
         }
@@ -438,7 +481,7 @@ final class PlayerController {
         }
         saveSession()
         Task {
-            let seconds = (try? await item.asset.load(.duration))?.seconds ?? 0
+            let seconds = await durationLoader(item)
             guard item === player.currentItem else { return }
             duration = seconds.isFinite ? seconds : 0
             updateNowPlayingInfo()
@@ -449,9 +492,9 @@ final class PlayerController {
         }
         nowPlaying = TrackMetadata()
         updateNowPlayingInfo()
-        Task {
-            let metadata = await loadMetadata(for: track)
-            guard track == currentTrack else { return }
+        metadataTask = Task {
+            let metadata = await metadataLoader(track)
+            guard item === player.currentItem else { return }
             nowPlaying = metadata
             updateNowPlayingInfo()
             // AirPlay receivers read metadata from the item itself, not
@@ -462,7 +505,7 @@ final class PlayerController {
         }
     }
 
-    private func externalMetadata(for track: Track) -> [AVMetadataItem] {
+    func externalMetadata(for track: Track) -> [AVMetadataItem] {
         var items: [AVMetadataItem] = []
         func add(_ identifier: AVMetadataIdentifier, _ value: (NSCopying & NSObjectProtocol)?) {
             guard let value else { return }
@@ -518,7 +561,10 @@ final class PlayerController {
 
     private func updateNowPlayingInfo() {
         guard let track = currentTrack else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            nowPlayingInfo = nil
+            if systemIntegration {
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            }
             return
         }
         var info: [String: Any] = [
@@ -542,6 +588,9 @@ final class PlayerController {
                 info[MPMediaItemPropertyArtwork] = DetachedArtwork(image: image).mediaItemArtwork
             }
         #endif
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        nowPlayingInfo = info
+        if systemIntegration {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
     }
 }
