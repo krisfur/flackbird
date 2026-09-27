@@ -116,11 +116,12 @@ final class FakeTransport: PlaybackTransport {
 
 @MainActor
 func testPlayer(_ store: TestStore, transport: FakeTransport = FakeTransport(),
-                activate: @escaping @Sendable () async throws -> Void = {}) -> PlayerController
+                activate: @escaping @Sendable () async throws -> Void = {},
+                now: @escaping () -> Date = Date.init) -> PlayerController
 {
     PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
                      activate: activate, metadataLoader: { TrackMetadata(title: $0.title, artist: $0.artist, album: $0.album) },
-                     durationLoader: { _ in 120 })
+                     durationLoader: { _ in 120 }, now: now)
 }
 
 func testTracks(root: URL, count: Int = 3) -> [Track] {

@@ -46,6 +46,7 @@ final class PlayerController {
     private let metadataLoader: @Sendable (Track) async -> TrackMetadata
     private let durationLoader: @MainActor (AVPlayerItem) async -> Double
     private let playbackActivation: PlaybackActivation
+    private let now: () -> Date
     private var seekGeneration = 0
     @ObservationIgnored private(set) var nowPlayingInfo: [String: Any]?
     private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
@@ -97,13 +98,15 @@ final class PlayerController {
         metadataLoader: @escaping @Sendable (Track) async -> TrackMetadata = loadMetadata,
         durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
             await (try? $0.asset.load(.duration))?.seconds ?? 0
-        }
+        },
+        now: @escaping () -> Date = Date.init
     ) {
         player = transport ?? AVPlayer()
         self.defaults = defaults
         self.systemIntegration = systemIntegration
         self.metadataLoader = metadataLoader
         self.durationLoader = durationLoader
+        self.now = now
         playbackActivation = PlaybackActivation(activate: activate)
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
         repeatMode = defaults.string(forKey: Self.repeatKey)
@@ -335,7 +338,7 @@ final class PlayerController {
     func updatePlaybackTime(_ seconds: Double) {
         guard !isSeeking, seconds.isFinite else { return }
         currentTime = max(0, seconds)
-        if Date().timeIntervalSince(lastSessionSave) > 5 {
+        if now().timeIntervalSince(lastSessionSave) > 5 {
             saveSessionTime()
         }
     }
@@ -429,7 +432,7 @@ final class PlayerController {
     /// Progress and seeks only move the time; the queue is saved when it changes.
     private func saveSessionTime() {
         guard currentTrack != nil else { return }
-        lastSessionSave = Date()
+        lastSessionSave = now()
         defaults.set(currentTime, forKey: Self.sessionTimeKey)
     }
 

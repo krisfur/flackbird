@@ -33,6 +33,28 @@ struct PersistenceTests {
         #expect(restored.currentTrack == relocated[2])
     }
 
+    @Test func playbackPositionIsSavedEveryFewSecondsForRelaunch() throws {
+        let store = try TestStore()
+        let tracks = testTracks(root: store.root)
+        var clock = Date()
+        let player = testPlayer(store, now: { clock })
+        player.play(tracks[1], in: tracks)
+        clock += 3
+        player.updatePlaybackTime(3)
+        #expect(store.defaults.double(forKey: "sessionTime") == 0)
+        clock += 3
+        player.updatePlaybackTime(6)
+        #expect(store.defaults.double(forKey: "sessionTime") == 6)
+        clock += 3
+        player.updatePlaybackTime(9)
+        clock += 3
+        player.updatePlaybackTime(12)
+        // A killed app never pauses or saves on exit; relaunch restores the last periodic save.
+        let relaunched = testPlayer(store)
+        relaunched.restoreSession(from: tracks)
+        #expect(relaunched.currentTrack == tracks[1] && relaunched.currentTime == 12)
+    }
+
     @Test func missingTracksAreDroppedWithoutOverridingFreshSelection() throws {
         let store = try TestStore()
         let tracks = testTracks(root: store.root)
