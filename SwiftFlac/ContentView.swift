@@ -375,7 +375,8 @@ struct ContentView: View {
             let folder = library.playlists.first { $0.name == ScreenshotMode.folder }
             Task { @MainActor in
                 #if os(macOS)
-                    // Fixed size, so captures fit a 16:10 App Store canvas.
+                    // Frontmost at a fixed size, so captures look active and fit a 16:10 canvas.
+                    NSApp.activate()
                     NSApp.windows.first { $0.isVisible && $0.canBecomeMain }?
                         .setFrame(NSRect(x: 120, y: 120, width: 1180, height: 740), display: true)
                 #endif

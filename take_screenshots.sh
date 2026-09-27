@@ -110,18 +110,22 @@ SWIFT
 mac_shoot() {
     local screen="$1" appearance="$2" file="$3" background
     [[ "$appearance" == dark ]] && background=0x1c1e22 || background=0xe6eaf0
-    SWIFTFLAC_SCREEN="$screen" SWIFTFLAC_APPEARANCE="$appearance" SWIFTFLAC_LIBRARY="$LIBRARY" \
-        build/screenshots-mac/Build/Products/Debug/SwiftFlac.app/Contents/MacOS/SwiftFlac >/dev/null 2>&1 &
-    local pid=$!
+    # Launched through LaunchServices so it comes to the front; a bare exec stays inactive.
+    local app="$PWD/build/screenshots-mac/Build/Products/Debug/SwiftFlac.app"
+    open -n "$app" --env SWIFTFLAC_SCREEN="$screen" --env SWIFTFLAC_APPEARANCE="$appearance" \
+        --env SWIFTFLAC_LIBRARY="$LIBRARY"
+    sleep 1
+    local pid
+    pid=$(pgrep -n -f "$app/Contents/MacOS/SwiftFlac")
     sleep "$SETTLE"
     local windows=() line
     while read -r line; do windows+=("$line"); done < <(build/window-bounds "$pid")
     [[ ${#windows[@]} -gt 0 ]] || { kill "$pid"; echo "no SwiftFlac window found" >&2; return 1; }
-    local inputs=() filter="" index=0 main_x=0 main_y=0 scale=1 left=0 top=0 canvas_w=1280 canvas_h=800
+    local inputs=() filter="" index=0 main_pixels="" main_x=0 main_y=0 scale=1 left=0 top=0 canvas_w=1280 canvas_h=800
     for line in "${windows[@]}"; do
         read -r id x y w h <<<"$line"
         local image="build/mac-window-$index.png"
-        if ! screencapture -o -x -l "$id" "$image"; then
+        if ! screencapture -x -o -l "$id" "$image"; then
             kill "$pid" 2>/dev/null || true
             echo "Capture failed: give your terminal Screen Recording access in System Settings > Privacy & Security." >&2
             return 1
@@ -135,6 +139,12 @@ mac_shoot() {
             canvas_w=$((1280 * scale)) canvas_h=$((800 * scale))
             left=$(((canvas_w - pixel_w) / 2)) top=$(((canvas_h - pixel_h) / 2))
             filter="[0][1]overlay=$left:$top[v1]"
+            main_pixels="$pixel_w $pixel_h"
+        elif [[ "$pixel_w $pixel_h" == "$main_pixels" ]]; then
+            # A popover captures as its parent window with the popover composited in: use it as is.
+            inputs=()
+            index=0
+            image="build/mac-window-1.png"
         else
             filter+=";[v$index][$((index + 1))]overlay=$((left + (x - main_x) * scale)):$((top + (y - main_y) * scale))[v$((index + 1))]"
         fi
@@ -144,7 +154,7 @@ mac_shoot() {
     ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=$background:s=${canvas_w}x${canvas_h}" "${inputs[@]}" \
         -filter_complex "$filter" -map "[v$index]" -frames:v 1 "$file"
     kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
     echo "  $(basename "$file")"
 }
 
