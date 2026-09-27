@@ -17,6 +17,7 @@ struct SettingsButton: View {
 struct SettingsView: View {
     @Environment(MusicLibrary.self) private var library
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
     @State private var showingFolderPicker = false
 
@@ -52,7 +53,9 @@ struct SettingsView: View {
                 // Apps can't read or flip the Siri switch; this opens the Shortcuts page that has it.
                 Section {
                     #if os(iOS)
+                        // .automatic contrasts with the background; match it, outlined to stay visible.
                         ShortcutsLink()
+                            .shortcutsLinkStyle(colorScheme == .dark ? .darkOutline : .lightOutline)
                     #else
                         // ShortcutsLink is iOS-only; this opens the Shortcuts app instead of SwiftFlac's page.
                         Link(destination: URL(string: "shortcuts://")!) {
@@ -62,7 +65,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Siri & Shortcuts")
                 } footer: {
-                    Text("Turn on Siri for SwiftFlac there to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                    Text("In Shortcuts, tap \(Image(systemName: "info.circle")) at the top right and turn on Siri to use voice commands like \"Shuffle my library in SwiftFlac\".")
                 }
 
                 Section("About") {
