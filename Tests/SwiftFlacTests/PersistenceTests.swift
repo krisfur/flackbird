@@ -11,7 +11,7 @@ struct PersistenceTests {
         let tracks = testTracks(root: oldRoot)
         let transport = FakeTransport()
         let player = testPlayer(store, transport: transport)
-        player.libraryRootPath = oldRoot.path
+        player.libraryRoot = oldRoot
         player.play(tracks[1], in: tracks)
         try await eventually { player.duration == 120 }
         player.toggleShuffle()
@@ -20,7 +20,7 @@ struct PersistenceTests {
         transport.completeSeek()
         try await eventually { store.defaults.double(forKey: "sessionTime") == 35 }
         let restored = testPlayer(store)
-        restored.libraryRootPath = newRoot.path
+        restored.libraryRoot = newRoot
         let relocated = testTracks(root: newRoot)
         restored.restoreSession(from: relocated)
         #expect(!restored.isPlaying && restored.currentTrack == relocated[1])

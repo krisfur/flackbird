@@ -366,7 +366,7 @@ struct ContentView: View {
 
     private func attemptRestore() {
         guard !library.playlists.isEmpty else { return }
-        player.libraryRootPath = library.rootURL?.path
+        player.libraryRoot = library.rootURL
         player.restoreSession(from: library.playlists.flatMap(\.tracks))
         restoreNavigationIfNeeded()
     }

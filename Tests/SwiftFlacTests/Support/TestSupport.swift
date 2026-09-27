@@ -43,7 +43,7 @@ func fixture(_ name: String) throws -> URL {
 func eventually(_ condition: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
     let deadline = ContinuousClock.now + .seconds(5)
     while !condition(), ContinuousClock.now < deadline {
-        await Task.yield()
+        try await Task.sleep(for: .milliseconds(5))
     }
     try #require(condition(), sourceLocation: sourceLocation)
 }

@@ -82,9 +82,9 @@ final class MusicLibrary {
     private let now: () -> Date
     private let startAccess: (URL) -> Bool
     private let stopAccess: (URL) -> Void
-    private(set) var scanTask: Task<Void, Never>?
-    private var refreshTask: Task<Void, Never>?
-    private var cacheWriteTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var cacheWriteTask: Task<Void, Never>?
 
     init(
         defaults: UserDefaults = .standard,

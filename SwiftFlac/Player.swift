@@ -47,7 +47,7 @@ final class PlayerController {
     private let durationLoader: @MainActor (AVPlayerItem) async -> Double
     private let playbackActivation: PlaybackActivation
     private var seekGeneration = 0
-    private(set) var nowPlayingInfo: [String: Any]?
+    @ObservationIgnored private(set) var nowPlayingInfo: [String: Any]?
     private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
     /// The macOS route picker needs the player reference to offer AirPlay.
     var routePickerPlayer: AVPlayer? {
@@ -57,7 +57,7 @@ final class PlayerController {
     private var originalQueue: [Track] = []
     private var timeObserver: Any?
     private var isSeeking = false
-    private(set) var metadataTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var metadataTask: Task<Void, Never>?
     private var statusObservation: NSKeyValueObservation?
     private var consecutiveFailures = 0
     private var resumeAfterInterruption = false
@@ -74,10 +74,10 @@ final class PlayerController {
 
     /// Set before session restore; sessions persist root-relative paths
     /// because the app's container path changes across updates.
-    var libraryRootPath: String?
+    var libraryRoot: URL?
 
     private func sessionKey(for url: URL) -> String {
-        NavigationPersistence.relativePath(url, root: libraryRootPath.map { URL(fileURLWithPath: $0) })
+        NavigationPersistence.relativePath(url, root: libraryRoot)
     }
 
     var currentTrack: Track? {

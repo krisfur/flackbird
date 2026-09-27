@@ -16,7 +16,7 @@ enum NavigationPersistence {
     /// Enumeration can report /var and /tmp through their /private targets. Folded as
     /// a string op: resolving symlinks would hit the disk for every track.
     private static func normalizedPath(_ url: URL) -> String {
-        let path = url.canonicalFileURL.path
+        let path = url.path.precomposedStringWithCanonicalMapping
         for alias in ["/private/var", "/private/tmp"] where path == alias || path.hasPrefix(alias + "/") {
             return String(path.dropFirst("/private".count))
         }
