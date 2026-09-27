@@ -6,11 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AE5700000000000000000070 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = AE57000000000000000000C8 /* Fixtures */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AE570000000000000000006E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F1AC0000000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1AC00000000000000000006;
+			remoteInfo = SwiftFlac;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		AE5700000000000000000066 /* SwiftFlacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftFlacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE57000000000000000000C8 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = Tests/Fixtures; sourceTree = "<group>"; };
 		F1AC00000000000000000001 /* SwiftFlac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftFlac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AE5700000000000000000065 /* SwiftFlacTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = SwiftFlacTests;
+			path = Tests/SwiftFlacTests;
+			sourceTree = "<group>";
+		};
 		F1AC00000000000000000002 /* SwiftFlac */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SwiftFlac;
@@ -19,6 +41,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AE5700000000000000000068 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F1AC00000000000000000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -33,6 +62,8 @@
 			isa = PBXGroup;
 			children = (
 				F1AC00000000000000000002 /* SwiftFlac */,
+				AE5700000000000000000065 /* SwiftFlacTests */,
+				AE57000000000000000000C8 /* Fixtures */,
 				F1AC00000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				F1AC00000000000000000001 /* SwiftFlac.app */,
+				AE5700000000000000000066 /* SwiftFlacTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +80,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AE5700000000000000000064 /* SwiftFlacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE570000000000000000006A /* Build configuration list for PBXNativeTarget "SwiftFlacTests" */;
+			buildPhases = (
+				AE5700000000000000000067 /* Sources */,
+				AE5700000000000000000068 /* Frameworks */,
+				AE5700000000000000000069 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AE570000000000000000006D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AE5700000000000000000065 /* SwiftFlacTests */,
+			);
+			name = SwiftFlacTests;
+			packageProductDependencies = (
+			);
+			productName = SwiftFlacTests;
+			productReference = AE5700000000000000000066 /* SwiftFlacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		F1AC00000000000000000006 /* SwiftFlac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F1AC00000000000000000007 /* Build configuration list for PBXNativeTarget "SwiftFlac" */;
@@ -80,6 +135,10 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					AE5700000000000000000064 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = F1AC00000000000000000006;
+					};
 					F1AC00000000000000000006 = {
 						CreatedOnToolsVersion = 16.0;
 					};
@@ -100,11 +159,20 @@
 			projectRoot = "";
 			targets = (
 				F1AC00000000000000000006 /* SwiftFlac */,
+				AE5700000000000000000064 /* SwiftFlacTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AE5700000000000000000069 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE5700000000000000000070 /* Fixtures in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F1AC00000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,6 +183,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		AE5700000000000000000067 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F1AC00000000000000000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,7 +199,57 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		AE570000000000000000006D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1AC00000000000000000006 /* SwiftFlac */;
+			targetProxy = AE570000000000000000006E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		AE570000000000000000006B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kfurman.SwiftFlacTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				"TEST_HOST[sdk=iphone*]" = "$(BUILT_PRODUCTS_DIR)/SwiftFlac.app/SwiftFlac";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/SwiftFlac.app/Contents/MacOS/SwiftFlac";
+			};
+			name = Debug;
+		};
+		AE570000000000000000006C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kfurman.SwiftFlacTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				"TEST_HOST[sdk=iphone*]" = "$(BUILT_PRODUCTS_DIR)/SwiftFlac.app/SwiftFlac";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/SwiftFlac.app/Contents/MacOS/SwiftFlac";
+			};
+			name = Release;
+		};
 		F1AC0000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -322,6 +447,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AE570000000000000000006A /* Build configuration list for PBXNativeTarget "SwiftFlacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE570000000000000000006B /* Debug */,
+				AE570000000000000000006C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F1AC00000000000000000007 /* Build configuration list for PBXNativeTarget "SwiftFlac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
