@@ -56,6 +56,26 @@ struct PlaybackTests {
         #expect(player.repeatMode == .off)
     }
 
+    @Test func explicitModeChangesPersistAndKeepTheQueue() throws {
+        let store = try TestStore()
+        let player = testPlayer(store)
+        let tracks = testTracks(root: store.root)
+        player.play(tracks[1], in: tracks)
+        player.setShuffle(false)
+        #expect(player.queue == tracks)
+        player.setShuffle(true)
+        let shuffled = player.queue
+        player.setShuffle(true)
+        #expect(player.queue == shuffled && player.currentTrack == tracks[1])
+        player.setRepeatMode(.one)
+        let restored = testPlayer(store)
+        #expect(restored.isShuffling && restored.repeatMode == .one)
+    }
+
+    @Test(arguments: [RepeatMode.off, .all, .one]) func repeatModeMapsToRemoteCommands(mode: RepeatMode) {
+        #expect(RepeatMode(mode.remoteType) == mode)
+    }
+
     @Test func seekClampsAndIgnoresObsoleteCompletions() async throws {
         let store = try TestStore()
         let transport = FakeTransport()
