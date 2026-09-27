@@ -300,9 +300,11 @@ struct NowPlayingView: View {
     var body: some View {
         GeometryReader { geo in
             if geo.size.width > geo.size.height {
-                // Landscape: artwork beside the controls instead of above them.
-                HStack(spacing: 40) {
-                    artwork(fitting: geo.size, landscape: true)
+                // Landscape: artwork beside the controls instead of above them. A narrow detail
+                // column (the sidebar open in iPhone landscape) tightens the spacing so it fits.
+                let tight = geo.size.width < 700
+                HStack(spacing: tight ? 24 : 40) {
+                    artwork(fitting: geo.size, landscape: true, tight: tight)
                     VStack(spacing: 28) {
                         info
                         scrubber
@@ -310,7 +312,7 @@ struct NowPlayingView: View {
                     }
                     .frame(maxWidth: 440)
                 }
-                .padding(32)
+                .padding(tight ? 20 : 32)
                 .frame(width: geo.size.width, height: geo.size.height)
             } else {
                 VStack(spacing: 24) {
@@ -362,14 +364,15 @@ struct NowPlayingView: View {
         #endif
     }
 
-    private func artwork(fitting size: CGSize, landscape: Bool) -> some View {
-        // Reserve room for the controls: beside the artwork in landscape,
-        // below it (~324pt, including the fixed-height title and credits) in portrait.
+    private func artwork(fitting size: CGSize, landscape: Bool, tight: Bool = false) -> some View {
+        // Reserve room for the controls: beside the artwork in landscape (the transport needs
+        // ~350pt, plus padding and spacing), below it (~324pt, including the fixed-height title
+        // and credits) in portrait.
         let side = landscape
-            ? min(size.height - 64, size.width * 0.45, 320)
+            ? min(size.height - 64, size.width - (tight ? 414 : 454), size.width * 0.45, 320)
             : min(size.width - 64, size.height - 324, 320)
         return goToTarget(artworkMenu) {
-            ArtworkView(image: artwork, size: max(side, 120), cornerRadius: 12)
+            ArtworkView(image: artwork, size: max(side, landscape ? 80 : 120), cornerRadius: 12)
                 .shadow(radius: 10)
         }
     }
