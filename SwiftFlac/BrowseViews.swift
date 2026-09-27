@@ -338,9 +338,8 @@ final class ArtworkStore {
             }
             return nil
         }
+        // Callers drop results for canceled tasks; the cache still keeps the decode.
         cache.setObject(thumbnail, forKey: key, cost: thumbnail.cost)
-        // Keep the decode for the next appearance, but don't hand it to a canceled view.
-        guard !Task.isCancelled else { return nil }
         return Image(decorative: thumbnail.image, scale: 1)
     }
 }

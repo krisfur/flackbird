@@ -42,15 +42,26 @@ struct ArtworkTests {
 }
 
 extension ArtworkTests {
-    @Test @MainActor func canceledLoadCannotPublishAnObsoleteCover() async throws {
+    @Test @MainActor func canceledLoadStillCachesTheDecode() async throws {
+        actor Calls {
+            var count = 0
+            func next() -> Int {
+                count += 1
+                return count
+            }
+        }
         let gate = AsyncGate<Data?>()
-        let store = ArtworkStore(loadArtwork: { _ in await gate.wait() })
+        let calls = Calls()
+        // Only the first load has artwork, so an uncached second load misses.
+        let store = ArtworkStore(loadArtwork: { _ in await calls.next() == 1 ? await gate.wait() : nil })
         let track = Track(url: URL(fileURLWithPath: "/old.flac"))
         let pending = Task { await store.thumbnail(for: track, maxPixelSize: 40) }
         await gate.waitUntilEntered()
         pending.cancel()
         let data = try #require(FlacMetadata.read(from: fixture("sample.flac")).artworkData)
         await gate.finish(data)
-        #expect(await pending.value == nil)
+        _ = await pending.value
+        #expect(await store.thumbnail(for: track, maxPixelSize: 40) != nil)
+        #expect(await calls.count == 1)
     }
 }
