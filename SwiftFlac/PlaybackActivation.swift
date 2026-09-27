@@ -41,17 +41,17 @@ final class PlaybackActivation {
     }
 }
 
-#if os(iOS)
-    enum PlaybackAudioSession {
-        private enum ActivationError: LocalizedError {
-            case declined
+enum PlaybackAudioSession {
+    private enum ActivationError: LocalizedError {
+        case declined
 
-            var errorDescription: String? { "Audio session activation was declined." }
-        }
+        var errorDescription: String? { "Audio session activation was declined." }
+    }
 
-        static func activate() async throws {
-            // Category configuration and the pre-iOS 27 synchronous activation
-            // must not block the main actor. A plain Task would inherit it.
+    static func activate() async throws {
+        // Category configuration and the pre-iOS 27 synchronous activation
+        // must not block the main actor. A plain Task would inherit it.
+        #if os(iOS)
             try await Task.detached(priority: .userInitiated) {
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playback, mode: .default)
@@ -63,6 +63,6 @@ final class PlaybackActivation {
                 #endif
                 try session.setActive(true)
             }.value
-        }
+        #endif
     }
-#endif
+}

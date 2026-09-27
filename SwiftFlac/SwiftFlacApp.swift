@@ -2,15 +2,28 @@ import SwiftUI
 
 @main
 struct SwiftFlacApp: App {
-    @State private var library = MusicLibrary()
-    @State private var player = PlayerController()
+    @State private var library: MusicLibrary
+    @State private var player: PlayerController
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        #if DEBUG
+            if let launch = TestLaunch.make() {
+                _library = State(initialValue: launch.library)
+                _player = State(initialValue: launch.player)
+                return
+            }
+        #endif
+        _library = State(initialValue: MusicLibrary())
+        _player = State(initialValue: PlayerController())
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(library)
                 .environment(player)
+                .defaultAppStorage(library.defaults)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

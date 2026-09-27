@@ -261,7 +261,7 @@ struct AlbumCell: View {
 
 /// Boxes a decoded thumbnail: NSCache needs a class, and the decode happens
 /// off the main actor. Immutable, so handing it across is safe.
-private final class Thumbnail: @unchecked Sendable {
+final class Thumbnail: @unchecked Sendable {
     let image: CGImage
     let cost: Int
 
@@ -273,7 +273,7 @@ private final class Thumbnail: @unchecked Sendable {
 
 /// Decodes straight to a thumbnail no larger than `maxPixelSize`, so a 1400px
 /// cover never becomes a full-size bitmap to fill a 40pt row.
-private func downsampled(_ data: Data, maxPixelSize: Int) -> Thumbnail? {
+func downsampled(_ data: Data, maxPixelSize: Int) -> Thumbnail? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
     guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
     let options = [
@@ -302,7 +302,12 @@ final class ArtworkStore {
     private static let costLimit = 32 * 1024 * 1024
     private static let missLimit = 4096
 
-    private init() {
+    private let loadArtwork: @Sendable (URL) async -> Data?
+
+    init(loadArtwork: @escaping @Sendable (URL) async -> Data? = {
+        await loadMetadata(from: $0, includeArtwork: true).artworkData
+    }) {
+        self.loadArtwork = loadArtwork
         cache.totalCostLimit = Self.costLimit
     }
 
@@ -317,8 +322,9 @@ final class ArtworkStore {
         if misses.contains(url) {
             return nil
         }
+        let loadArtwork = loadArtwork
         let thumbnail = await Task.detached(priority: .utility) { () -> Thumbnail? in
-            guard let data = await loadMetadata(from: url, includeArtwork: true).artworkData else { return nil }
+            guard let data = await loadArtwork(url) else { return nil }
             return downsampled(data, maxPixelSize: maxPixelSize)
         }.value
         guard let thumbnail else {

@@ -21,10 +21,8 @@ private struct LibraryCache: Codable {
         var trackNumber: Int?
         var discNumber: Int?
 
-        init(track: Track, rootPath: String) {
-            relativePath = track.url.path.hasPrefix(rootPath)
-                ? String(track.url.path.dropFirst(rootPath.count))
-                : track.url.path
+        init(track: Track, root: URL) {
+            relativePath = NavigationPersistence.relativePath(track.url, root: root)
             title = track.title
             artist = track.artist
             album = track.album
@@ -77,15 +75,51 @@ final class MusicLibrary {
 
     private static let bookmarkKey = "libraryFolderBookmark"
 
-    private nonisolated static var cacheURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    let defaults: UserDefaults
+    private let cacheURL: URL
+    private let scan: @Sendable (URL) async -> LibraryContent
+    private let fingerprint: @Sendable (URL) -> Int
+    private let now: () -> Date
+    private let startAccess: (URL) -> Bool
+    private let stopAccess: (URL) -> Void
+    private(set) var scanTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var cacheWriteTask: Task<Void, Never>?
+
+    init(
+        defaults: UserDefaults = .standard,
+        cacheURL: URL? = nil,
+        rootURL: URL? = nil,
+        startsAutomatically: Bool = true,
+        scan: @escaping @Sendable (URL) async -> LibraryContent = LibraryScanner.scan,
+        fingerprint: @escaping @Sendable (URL) -> Int = LibraryScanner.fingerprint,
+        now: @escaping () -> Date = Date.init,
+        startAccess: @escaping (URL) -> Bool = { $0.startAccessingSecurityScopedResource() },
+        stopAccess: @escaping (URL) -> Void = { $0.stopAccessingSecurityScopedResource() }
+    ) {
+        self.defaults = defaults
+        self.cacheURL = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LibraryCache.json")
+        self.rootURL = rootURL
+        self.scan = scan
+        self.fingerprint = fingerprint
+        self.now = now
+        self.startAccess = startAccess
+        self.stopAccess = stopAccess
+        if startsAutomatically {
+            if rootURL == nil {
+                restoreRoot()
+            }
+            loadCache()
+            rescan()
+        }
     }
 
-    init() {
-        restoreRoot()
-        loadCache()
-        rescan()
+    /// Also allows callers to await a rescan before consuming a snapshot.
+    func waitForPendingWork() async {
+        await refreshTask?.value
+        await scanTask?.value
+        await cacheWriteTask?.value
     }
 
     /// Points the library at a new root folder and persists access to it.
@@ -96,7 +130,7 @@ final class MusicLibrary {
         #else
             let bookmark = try? url.bookmarkData()
         #endif
-        UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+        defaults.set(bookmark, forKey: Self.bookmarkKey)
         rootURL = url
         rescan()
     }
@@ -111,11 +145,12 @@ final class MusicLibrary {
     /// flicking between apps doesn't walk the tree repeatedly.
     func refreshIfNeeded() {
         guard !isScanning,
-              Date().timeIntervalSince(lastScanFinished) > 2,
+              now().timeIntervalSince(lastScanFinished) > 2,
               let rootURL else { return }
         let generation = scanGeneration
-        Task.detached(priority: .utility) {
-            let fingerprint = LibraryScanner.fingerprint(root: rootURL)
+        let fingerprint = fingerprint
+        refreshTask = Task.detached(priority: .utility) {
+            let fingerprint = fingerprint(rootURL)
             await MainActor.run {
                 guard generation == self.scanGeneration, !self.isScanning else { return }
                 guard fingerprint != self.lastFingerprint else { return }
@@ -132,9 +167,11 @@ final class MusicLibrary {
             return
         }
         isScanning = true
-        Task.detached(priority: .userInitiated) {
-            let content = await LibraryScanner.scan(root: rootURL)
-            let fingerprint = LibraryScanner.fingerprint(root: rootURL)
+        let scan = scan
+        let fingerprint = fingerprint
+        scanTask = Task.detached(priority: .userInitiated) {
+            let content = await scan(rootURL)
+            let fingerprint = fingerprint(rootURL)
             await MainActor.run {
                 guard generation == self.scanGeneration else { return }
                 self.lastFingerprint = fingerprint
@@ -146,7 +183,7 @@ final class MusicLibrary {
     private func apply(_ content: LibraryContent) {
         applyContent(content)
         isScanning = false
-        lastScanFinished = Date()
+        lastScanFinished = now()
         saveCache(content.playlists)
     }
 
@@ -160,7 +197,7 @@ final class MusicLibrary {
 
     private func loadCache() {
         guard let rootURL,
-              let data = try? Data(contentsOf: Self.cacheURL),
+              let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(LibraryCache.self, from: data),
               !cache.playlists.isEmpty else { return }
         let cachedPlaylists = cache.playlists.map { cached in
@@ -175,23 +212,21 @@ final class MusicLibrary {
 
     private func saveCache(_ playlists: [Playlist]) {
         guard let rootURL else { return }
-        let rootPath = rootURL.path
         let cache = LibraryCache(playlists: playlists.map { playlist in
             LibraryCache.CachedPlaylist(
                 name: playlist.name,
-                relativeFolder: playlist.folderURL.path.hasPrefix(rootPath)
-                    ? String(playlist.folderURL.path.dropFirst(rootPath.count))
-                    : playlist.folderURL.path,
-                tracks: playlist.tracks.map { LibraryCache.CachedTrack(track: $0, rootPath: rootPath) }
+                relativeFolder: NavigationPersistence.relativePath(playlist.folderURL, root: rootURL),
+                tracks: playlist.tracks.map { LibraryCache.CachedTrack(track: $0, root: rootURL) }
             )
         })
-        Task.detached(priority: .utility) {
+        let cacheURL = cacheURL
+        cacheWriteTask = Task.detached(priority: .utility) {
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? FileManager.default.createDirectory(
-                at: Self.cacheURL.deletingLastPathComponent(),
+                at: cacheURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try? data.write(to: Self.cacheURL, options: .atomic)
+            try? data.write(to: cacheURL, options: .atomic)
         }
     }
 
@@ -200,12 +235,14 @@ final class MusicLibrary {
     /// that never started is itself a bug.
     private func beginAccess(to url: URL) {
         guard accessedURL != url else { return }
-        accessedURL?.stopAccessingSecurityScopedResource()
-        accessedURL = url.startAccessingSecurityScopedResource() ? url : nil
+        if let accessedURL {
+            stopAccess(accessedURL)
+        }
+        accessedURL = startAccess(url) ? url : nil
     }
 
     private func restoreRoot() {
-        if let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) {
+        if let data = defaults.data(forKey: Self.bookmarkKey) {
             var stale = false
             #if os(macOS)
                 let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)
@@ -228,7 +265,7 @@ final class MusicLibrary {
 
 /// Filesystem walking and tag grouping, kept off the main actor since it
 /// reads the header of every audio file in the library.
-private enum LibraryScanner {
+enum LibraryScanner {
     private static let audioExtensions: Set<String> = ["flac", "mp3", "m4a", "aac", "wav", "aiff", "aif"]
 
     static func scan(root: URL) async -> LibraryContent {

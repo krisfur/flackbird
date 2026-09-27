@@ -370,7 +370,7 @@ struct NowPlayingView: View {
 
 #if os(iOS)
     struct AirPlayButton: UIViewRepresentable {
-        let player: AVPlayer
+        let player: AVPlayer?
 
         func makeUIView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
@@ -384,7 +384,7 @@ struct NowPlayingView: View {
     }
 #else
     struct AirPlayButton: NSViewRepresentable {
-        let player: AVPlayer
+        let player: AVPlayer?
 
         func makeNSView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
