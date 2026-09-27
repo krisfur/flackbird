@@ -314,10 +314,10 @@ struct NowPlayingView: View {
 
     private func artwork(fitting size: CGSize, landscape: Bool) -> some View {
         // Reserve room for the controls: beside the artwork in landscape,
-        // below it (~342pt, including the fixed-height title and credits) in portrait.
+        // below it (~324pt, including the fixed-height title and credits) in portrait.
         let side = landscape
             ? min(size.height - 64, size.width * 0.45, 320)
-            : min(size.width - 64, size.height - 342, 320)
+            : min(size.width - 64, size.height - 324, 320)
         return goToTarget(artworkMenu) {
             ArtworkView(image: artwork, size: max(side, 120), cornerRadius: 12)
                 .shadow(radius: 10)
@@ -327,7 +327,7 @@ struct NowPlayingView: View {
     private var info: some View {
         goToTarget(infoMenu) {
             VStack(spacing: 4) {
-                // Fixed heights (two lines of title, three of credits), so long names don't shift the layout between tracks.
+                // Fixed heights (two lines each for title and credits), so long names don't shift the layout between tracks.
                 Text(player.displayTitle)
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
@@ -337,7 +337,7 @@ struct NowPlayingView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(3, reservesSpace: true)
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(.horizontal)
