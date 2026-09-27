@@ -45,7 +45,9 @@ enum PlaybackAudioSession {
     private enum ActivationError: LocalizedError {
         case declined
 
-        var errorDescription: String? { "Audio session activation was declined." }
+        var errorDescription: String? {
+            "Audio session activation was declined."
+        }
     }
 
     static func activate() async throws {

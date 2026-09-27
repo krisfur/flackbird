@@ -227,12 +227,12 @@ struct NowPlayingView: View {
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)
-            .frame(minWidth: 420, minHeight: 540)
-            .overlay(alignment: .topTrailing) {
-                AirPlayButton(player: player.routePickerPlayer)
-                    .frame(width: 24, height: 24)
-                    .padding(12)
-            }
+        .frame(minWidth: 420, minHeight: 540)
+        .overlay(alignment: .topTrailing) {
+            AirPlayButton(player: player.routePickerPlayer)
+                .frame(width: 24, height: 24)
+                .padding(12)
+        }
         #endif
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -472,7 +472,7 @@ final class GoToMenuController {
             Coordinator()
         }
 
-        func makeUIView(context: Context) -> UIButton {
+        func makeUIView(context _: Context) -> UIButton {
             let button = UIButton(type: .custom)
             button.showsMenuAsPrimaryAction = true
             // A menu with no room below it opens upward, and UIKit reverses
