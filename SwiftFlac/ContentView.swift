@@ -74,6 +74,8 @@ extension EnvironmentValues {
     /// Installs the app's window-level gesture recognizers.
     private struct WindowGestureInstaller: UIViewRepresentable {
         let isEnabled: () -> Bool
+        /// Window-space region, such as the mini player's scrubber, that keeps its own drags.
+        let excludedRect: () -> CGRect
         let onForward: () -> Void
 
         func makeCoordinator() -> Coordinator {
@@ -100,6 +102,7 @@ extension EnvironmentValues {
 
         func updateUIView(_: WindowHookView, context: Context) {
             context.coordinator.isEnabled = isEnabled
+            context.coordinator.excludedRect = excludedRect
             context.coordinator.onForward = onForward
         }
 
@@ -111,6 +114,7 @@ extension EnvironmentValues {
 
         final class Coordinator: NSObject, UIGestureRecognizerDelegate {
             var isEnabled: () -> Bool = { false }
+            var excludedRect: () -> CGRect = { .null }
             var onForward: () -> Void = {}
             var recognizers: [UIGestureRecognizer] = []
 
@@ -137,6 +141,10 @@ extension EnvironmentValues {
             /// Taps inside a text field keep their caret placement instead of
             /// bouncing the keyboard down and back up.
             func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+                // A leftward scrub must not also navigate forward.
+                if gestureRecognizer is UIPanGestureRecognizer {
+                    return !excludedRect().contains(touch.location(in: nil))
+                }
                 guard gestureRecognizer is UITapGestureRecognizer else { return true }
                 var view = touch.view
                 while let current = view {
@@ -185,6 +193,7 @@ struct ContentView: View {
     private static let navOriginPathKey = "navOriginPath"
     @State private var showingFolderPicker = false
     @State private var showingNowPlaying = false
+    @State private var miniScrubberFrame = CGRect.null
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
     #if os(iOS)
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -260,6 +269,7 @@ struct ContentView: View {
                 // mode == nil means the Library list is showing, where its
                 // own gesture handles the forward swipe.
                 isEnabled: { mode != nil && !forwardStack.isEmpty && path.last != .nowPlaying },
+                excludedRect: { miniScrubberFrame },
                 onForward: goForward
             )
         )
@@ -538,7 +548,7 @@ struct ContentView: View {
                     NowPlayingView()
                 }
         #else
-            NowPlayingBar { openNowPlaying() }
+            NowPlayingBar(onScrubberFrame: { miniScrubberFrame = $0 }) { openNowPlaying() }
         #endif
     }
 }

@@ -20,11 +20,21 @@ struct NowPlayingBar: View {
     @Environment(\.displayScale) private var displayScale
     @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
     @State private var artwork: Image?
+    @State private var scrubFraction: Double?
+    /// Reports the scrub strip's window frame, so window-level swipes can leave it alone.
+    var onScrubberFrame: (CGRect) -> Void = { _ in }
     let onTap: () -> Void
+
+    private var playbackFraction: Double {
+        player.duration > 0 ? player.currentTime / player.duration : 0
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ProgressLine(progress: player.duration > 0 ? player.currentTime / player.duration : 0)
+            ProgressLine(progress: scrubFraction ?? playbackFraction)
+                .scaleEffect(y: scrubFraction == nil ? 1 : 2, anchor: .top)
+                .animation(.easeOut(duration: 0.15), value: scrubFraction == nil)
+                .overlay(alignment: .top) { scrubStrip }
             HStack(spacing: 14) {
                 // Only this leading region opens the full player, so the
                 // transport buttons never race against the tap gesture.
@@ -34,7 +44,11 @@ struct NowPlayingBar: View {
                         Text(player.displayTitle)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                        if let artist = player.displayArtist {
+                        if let scrubFraction {
+                            Text("\(formatted(scrubFraction * player.duration)) / \(formatted(player.duration))")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        } else if let artist = player.displayArtist {
                             Text(artist)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -93,6 +107,42 @@ struct NowPlayingBar: View {
             )
             guard !Task.isCancelled else { return }
             artwork = loaded
+        }
+    }
+}
+
+extension NowPlayingBar {
+    /// A taller invisible strip over the 3 pt line: 8 pt above it and into the bar's top
+    /// padding, stopping short of the buttons. A drag is required, so taps never seek.
+    private var scrubStrip: some View {
+        GeometryReader { geo in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 4)
+                        .onChanged { value in
+                            guard player.duration > 0 else { return }
+                            scrubFraction = min(max(value.location.x / geo.size.width, 0), 1)
+                        }
+                        .onEnded { value in
+                            guard player.duration > 0 else { return }
+                            scrubFraction = nil
+                            player.seek(to: min(max(value.location.x / geo.size.width, 0), 1) * player.duration)
+                        }
+                )
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onScrubberFrame($0) }
+        }
+        .frame(height: 19)
+        .alignmentGuide(.top) { $0[.top] + 8 }
+        .accessibilityElement()
+        .accessibilityLabel("Playback Position")
+        .accessibilityValue("\(formatted(player.currentTime)) of \(formatted(player.duration))")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: player.seek(to: player.currentTime + 10)
+            case .decrement: player.seek(to: max(player.currentTime - 10, 0))
+            @unknown default: break
+            }
         }
     }
 }
@@ -444,10 +494,10 @@ struct NowPlayingView: View {
             .compactMap(\.self)
             .joined(separator: " - ")
     }
+}
 
-    private func formatted(_ time: TimeInterval) -> String {
-        Duration.seconds(time).formatted(.time(pattern: .minuteSecond))
-    }
+private func formatted(_ time: TimeInterval) -> String {
+    Duration.seconds(time).formatted(.time(pattern: .minuteSecond))
 }
 
 #if os(iOS)
