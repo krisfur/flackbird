@@ -56,11 +56,13 @@ struct SettingsView: View {
                         // .automatic contrasts with the background; match it, outlined to stay visible.
                         ShortcutsLink()
                             .shortcutsLinkStyle(colorScheme == .dark ? .darkOutline : .lightOutline)
+                            .frame(maxWidth: .infinity)
                     #else
                         // ShortcutsLink is iOS-only; this opens the Shortcuts app instead of SwiftFlac's page.
                         Link(destination: URL(string: "shortcuts://")!) {
                             Label("Open Shortcuts", systemImage: "square.2.layers.3d")
                         }
+                        .frame(maxWidth: .infinity)
                     #endif
                 } header: {
                     Text("Siri & Shortcuts")
