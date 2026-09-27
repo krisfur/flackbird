@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 @main
@@ -7,15 +8,21 @@ struct SwiftFlacApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        var library: MusicLibrary?
+        var player: PlayerController?
         #if DEBUG
             if let launch = TestLaunch.make() {
-                _library = State(initialValue: launch.library)
-                _player = State(initialValue: launch.player)
-                return
+                library = launch.library
+                player = launch.player
             }
         #endif
-        _library = State(initialValue: MusicLibrary())
-        _player = State(initialValue: PlayerController())
+        let resolvedLibrary = library ?? MusicLibrary()
+        let resolvedPlayer = player ?? PlayerController()
+        _library = State(initialValue: resolvedLibrary)
+        _player = State(initialValue: resolvedPlayer)
+        // Siri and Shortcuts intents can launch the app in the background, before any view exists.
+        AppDependencyManager.shared.add(dependency: resolvedLibrary)
+        AppDependencyManager.shared.add(dependency: resolvedPlayer)
     }
 
     var body: some Scene {
@@ -24,6 +31,10 @@ struct SwiftFlacApp: App {
                 .environment(library)
                 .environment(player)
                 .defaultAppStorage(library.defaults)
+                // Siri learns folder, album, and artist names from the suggested entities.
+                .onChange(of: library.contentVersion) {
+                    SwiftFlacShortcuts.updateAppShortcutParameters()
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

@@ -65,6 +65,10 @@ final class MusicLibrary {
     /// Bumped whenever content lands (cache or scan) so restoration can react.
     private(set) var contentVersion = 0
 
+    var content: LibraryContent {
+        LibraryContent(playlists: playlists, albums: albums, artists: artists, allTracks: allTracks)
+    }
+
     private var scanGeneration = 0
     private var lastScanFinished = Date.distantPast
     private var lastFingerprint: Int?

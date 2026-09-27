@@ -372,10 +372,7 @@ struct ContentView: View {
     }
 
     private func resolveDestination(_ token: String) -> LibraryDestination? {
-        NavigationPersistence.resolve(token, content: LibraryContent(
-            playlists: library.playlists, albums: library.albums,
-            artists: library.artists, allTracks: library.allTracks
-        ), root: library.rootURL)
+        NavigationPersistence.resolve(token, content: library.content, root: library.rootURL)
     }
 
     private func attemptRestore() {
