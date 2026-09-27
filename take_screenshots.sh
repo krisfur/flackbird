@@ -176,7 +176,7 @@ qa() {
         id=$(prepare "$device")
         slug=$(echo "$device" | tr -cs 'A-Za-z0-9' '-' | sed 's/-$//')
         # iPadOS ignores an app's rotation request (the device or window decides), so iPads
-        # are checked in portrait only; rotate them by hand in Simulator.
+        # are checked in portrait only; rotate them by hand in DeviceHub (Simulator before Xcode 27).
         orientations="0 1"
         [[ "$device" == iPad* ]] && orientations="0"
         for screen in library albums folder nowplaying search; do

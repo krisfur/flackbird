@@ -3,7 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
-BUNDLE_ID="com.kfurman.SwiftFlac"
 # Drop a Music/ folder (subfolders = playlists) next to this script to
 # have it seeded into the simulator app's Documents; it is gitignored.
 MUSIC_DIR="${MUSIC_DIR:-$PWD/Music}"
@@ -16,7 +15,8 @@ fi
 echo "Using simulator $UDID"
 
 xcrun simctl boot "$UDID" 2>/dev/null || true
-open -a Simulator
+# Xcode 27 replaced Simulator.app with DeviceHub.app.
+open -a DeviceHub 2>/dev/null || open -a Simulator
 
 # Keep Spotlight/LaunchServices away from build products: a registered
 # iphonesimulator bundle shares the bundle ID and hijacks the Dock icon.
@@ -25,7 +25,10 @@ mkdir -p build && touch build/.metadata_never_index
 xcodebuild -project SwiftFlac.xcodeproj -scheme SwiftFlac -configuration Debug \
     -destination "id=$UDID" -derivedDataPath build build
 
-xcrun simctl install "$UDID" "build/Build/Products/Debug-iphonesimulator/SwiftFlac.app"
+APP="build/Build/Products/Debug-iphonesimulator/SwiftFlac.app"
+xcrun simctl install "$UDID" "$APP"
+# Read from the build so it follows APP_BUNDLE_IDENTIFIER.
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist")
 
 # Seed test music into the app's Documents folder (folders become playlists).
 if [ -d "$MUSIC_DIR" ]; then
