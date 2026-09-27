@@ -43,7 +43,7 @@ Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Tr
 | ![](screenshots/ipad-albums-light.png) | ![](screenshots/ipad-list-light.png) | ![](screenshots/ipad-details-light.png) |
 | ![](screenshots/ipad-albums-dark.png) | ![](screenshots/ipad-list-dark.png) | ![](screenshots/ipad-details-dark.png) |
 
-Screenshots use a generated demo library (original cover art, synthesized audio, fictional names) and are App Store sizes: iPhone 6.9" (1320x2868), iPad 13" (2064x2752), and Mac 16:10. Regenerate them with `./take_screenshots.sh` (needs ffmpeg; the Mac captures need Screen Recording access for your terminal); `./take_screenshots.sh qa` adds layout checks in both orientations under `build/screenshot-qa`.
+Screenshots use a generated demo library (original cover art, synthesized audio, fictional names) and are App Store sizes: iPhone 6.9" (1320x2868), iPad 13" landscape (2752x2064), and Mac 16:10. Regenerate them with `./take_screenshots.sh` (needs ffmpeg; rotate the iPad Pro 13-inch simulator to landscape in DeviceHub first, and the Mac captures need Screen Recording access for your terminal); `./take_screenshots.sh qa` adds layout checks in both orientations under `build/screenshot-qa`.
 
 ## Building
 
