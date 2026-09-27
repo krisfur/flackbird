@@ -36,6 +36,15 @@ Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Tr
 | ![](screenshots/ios-start-light.png) | ![](screenshots/ios-list-light.png) | ![](screenshots/ios-albums-light.png) | ![](screenshots/ios-details-light.png) | ![](screenshots/ios-search-light.png) |
 | ![](screenshots/ios-start-dark.png) | ![](screenshots/ios-list-dark.png) | ![](screenshots/ios-albums-dark.png) | ![](screenshots/ios-details-dark.png) | ![](screenshots/ios-search-dark.png) |
 
+### iPadOS
+
+| | | |
+|---|---|---|
+| ![](screenshots/ipad-albums-light.png) | ![](screenshots/ipad-list-light.png) | ![](screenshots/ipad-details-light.png) |
+| ![](screenshots/ipad-albums-dark.png) | ![](screenshots/ipad-list-dark.png) | ![](screenshots/ipad-details-dark.png) |
+
+Screenshots use a generated demo library (original cover art, synthesized audio, fictional names) and are App Store sizes: iPhone 6.9" (1320x2868), iPad 13" (2064x2752), and Mac 16:10. Regenerate them with `./take_screenshots.sh` (needs ffmpeg; the Mac captures need Screen Recording access for your terminal); `./take_screenshots.sh qa` adds layout checks in both orientations under `build/screenshot-qa`.
+
 ## Building
 
 Requires Xcode 26 on macOS.

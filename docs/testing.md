@@ -20,6 +20,6 @@ The suite covers nine areas, with parameterized cases for formats and malformed 
 - Audio quality: format, bit depth, sample rate, and bitrate for each supported format.
 - Siri and Shortcuts: library item listing and matching, and playing or shuffling an item.
 
-This covers application logic and audio-file integration, not button interactions, gestures, or OS delivery of lock-screen/AirPlay events. Those remain manual checks. There is no coverage-percentage target or testing of trivial getters and framework internals.
+This covers application logic and audio-file integration, not button interactions, gestures, or OS delivery of lock-screen/AirPlay events. For layout, `./take_screenshots.sh qa` captures every screen on iPhone (portrait and landscape) and iPad (portrait; iPadOS ignores app rotation requests) simulators for review. Those remain manual checks. There is no coverage-percentage target or testing of trivial getters and framework internals.
 
 Fixtures are generated tones and the existing sample FLAC. They are bundled only with the test target; running tests does not require ffmpeg. Tests control asynchronous completions and use bounded waits rather than fixed sleeps.

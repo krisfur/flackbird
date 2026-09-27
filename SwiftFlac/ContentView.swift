@@ -185,6 +185,9 @@ struct ContentView: View {
     // history; picking a category by hand clears it.
     @State private var preserveForwardStack = false
     @State private var hasRestoredNavigation = false
+    #if DEBUG
+        @State private var hasAppliedScreenshot = false
+    #endif
 
     private static let navModeKey = "navMode"
     private static let navPathKey = "navPath"
@@ -359,6 +362,49 @@ struct ContentView: View {
         }
     }
 
+    #if DEBUG
+        /// Plays the demo track part way in, then opens the requested screen. Navigation waits a
+        /// moment, as launch-time pushes are unreliable.
+        private func applyScreenshot(_ screenshot: ScreenshotMode) {
+            guard !hasAppliedScreenshot,
+                  let album = library.albums.first(where: { $0.name == ScreenshotMode.album }),
+                  let first = album.tracks.first else { return }
+            hasAppliedScreenshot = true
+            player.libraryRoot = library.rootURL
+            player.play(first, in: album.tracks)
+            let folder = library.playlists.first { $0.name == ScreenshotMode.folder }
+            Task { @MainActor in
+                #if os(macOS)
+                    // Fixed size, so captures fit a 16:10 App Store canvas.
+                    NSApp.windows.first { $0.isVisible && $0.canBecomeMain }?
+                        .setFrame(NSRect(x: 120, y: 120, width: 1180, height: 740), display: true)
+                #endif
+                try? await Task.sleep(for: .seconds(1))
+                player.seek(to: ScreenshotMode.startTime)
+                switch screenshot.screen {
+                case .library: mode = nil
+                case .albums: mode = .albums
+                case .search: mode = .allTracks
+                case .folder, .nowPlaying:
+                    mode = .folders
+                    // Changing mode resets the path, so push after it settles.
+                    try? await Task.sleep(for: .milliseconds(600))
+                    path = folder.map { [.playlist($0)] } ?? []
+                }
+                #if os(iOS)
+                    screenshot.rotateIfNeeded()
+                #endif
+                guard screenshot.screen == .nowPlaying else { return }
+                try? await Task.sleep(for: .seconds(1))
+                #if os(macOS)
+                    showingNowPlaying = true
+                #else
+                    path.append(.nowPlaying)
+                #endif
+            }
+        }
+    #endif
+
     /// Paths persist relative to the library root: the app's container
     /// path (and any absolute path in it) changes across app updates.
     private func persistenceToken(for destination: LibraryDestination) -> String {
@@ -387,6 +433,12 @@ struct ContentView: View {
 
     private func attemptRestore() {
         guard !library.playlists.isEmpty else { return }
+        #if DEBUG
+            if let screenshot = ScreenshotMode.current {
+                applyScreenshot(screenshot)
+                return
+            }
+        #endif
         player.restoreSession(from: library.playlists.flatMap(\.tracks))
         restoreNavigationIfNeeded()
     }
@@ -606,7 +658,11 @@ struct TrackListView: View {
     let tracks: [Track]
     var showsArtist = true
     var onPlay: () -> Void = {}
-    @State private var searchText = ""
+    #if DEBUG
+        @State private var searchText = ScreenshotMode.current?.screen == .search ? ScreenshotMode.searchQuery : ""
+    #else
+        @State private var searchText = ""
+    #endif
 
     private var filteredTracks: [Track] {
         LibrarySearch.filter(tracks, query: searchText, name: \.displayTitle, artist: \.artist)
