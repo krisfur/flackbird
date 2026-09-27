@@ -11,9 +11,11 @@ struct LibraryTests {
         _ = try store.file(".hidden/secret.flac", data: data)
         _ = try store.file("Collection/notes.txt")
         try FileManager.default.createDirectory(at: store.root.appendingPathComponent("fake.flac"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("Collection/linked.flac"),
+                                                   withDestinationURL: store.root.appendingPathComponent("root.FLAC"))
         let content = await LibraryScanner.scan(root: store.root)
         #expect(content.playlists.count == 2)
-        #expect(content.playlists.flatMap(\.tracks).count == 2)
+        #expect(content.playlists.flatMap(\.tracks).count == 3)
         #expect(content.allTracks.count == 1)
         #expect(content.playlists.contains { $0.name == "Collection" })
     }

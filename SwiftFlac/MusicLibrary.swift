@@ -274,7 +274,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         let contents = (try? fm.contentsOfDirectory(
             at: root,
-            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )) ?? []
 
@@ -312,7 +312,7 @@ enum LibraryScanner {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: root,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return 0 }
 
@@ -375,7 +375,7 @@ enum LibraryScanner {
     private static func audioFiles(under folder: URL) -> [URL] {
         let fm = FileManager.default
         var files: [URL] = []
-        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+        if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator where isAudioFile(url) {
                 files.append(url)
             }
@@ -442,6 +442,7 @@ enum LibraryScanner {
 
     private static func isAudioFile(_ url: URL) -> Bool {
         audioExtensions.contains(url.pathExtension.lowercased())
-            && (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            // Not isRegularFile: that rejects symlinked tracks along with directories.
+            && (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true
     }
 }
