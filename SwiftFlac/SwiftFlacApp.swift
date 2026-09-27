@@ -16,8 +16,12 @@ struct SwiftFlacApp: App {
                 player = launch.player
             }
         #endif
-        let resolvedLibrary = library ?? MusicLibrary()
         let resolvedPlayer = player ?? PlayerController()
+        // Runs for cache and scan content alike, including background launches with no window.
+        let resolvedLibrary = library ?? MusicLibrary(onContentChange: { library in
+            resolvedPlayer.libraryRoot = library.rootURL
+            SwiftFlacShortcuts.updateAppShortcutParameters()
+        })
         _library = State(initialValue: resolvedLibrary)
         _player = State(initialValue: resolvedPlayer)
         // Siri and Shortcuts intents can launch the app in the background, before any view exists.
@@ -31,10 +35,6 @@ struct SwiftFlacApp: App {
                 .environment(library)
                 .environment(player)
                 .defaultAppStorage(library.defaults)
-                // Siri learns folder, album, and artist names from the suggested entities.
-                .onChange(of: library.contentVersion) {
-                    SwiftFlacShortcuts.updateAppShortcutParameters()
-                }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

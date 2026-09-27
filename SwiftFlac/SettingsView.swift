@@ -65,7 +65,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Siri & Shortcuts")
                 } footer: {
-                    Text("In Shortcuts, tap \(Image(systemName: "info.circle")) at the top right and turn on Siri to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                    #if os(iOS)
+                        Text("In Shortcuts, tap \(Image(systemName: "info.circle")) at the top right and turn on Siri to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                    #else
+                        Text("Turn on Siri for SwiftFlac in Shortcuts to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                    #endif
                 }
 
                 Section("About") {

@@ -249,6 +249,20 @@ final class PlayerController {
         saveSession()
     }
 
+    /// Starts `tracks` in the given mode without first reshuffling the queue being replaced.
+    func play(_ track: Track, in tracks: [Track], shuffled: Bool) {
+        if shuffled != isShuffling {
+            storeShuffle(shuffled)
+        }
+        play(track, in: tracks)
+    }
+
+    private func storeShuffle(_ enabled: Bool) {
+        isShuffling = enabled
+        defaults.set(isShuffling, forKey: Self.shuffleKey)
+        publishPlaybackModes()
+    }
+
     func play(_ track: Track, in tracks: [Track]) {
         guard tracks.contains(track) else { return }
         consecutiveFailures = 0
@@ -271,9 +285,7 @@ final class PlayerController {
 
     func setShuffle(_ enabled: Bool) {
         guard enabled != isShuffling else { return }
-        isShuffling = enabled
-        defaults.set(isShuffling, forKey: Self.shuffleKey)
-        publishPlaybackModes()
+        storeShuffle(enabled)
         guard let current = currentTrack else { return }
         if isShuffling {
             var rest = queue.filter { $0 != current }

@@ -15,13 +15,39 @@ struct LibraryItemEntity: AppEntity {
         DisplayRepresentation(title: "\(name)", subtitle: "\(detail)")
     }
 
-    static func all(in content: LibraryContent, root: URL?) -> [LibraryItemEntity] {
-        func item(_ destination: LibraryDestination, _ name: String, _ detail: String) -> LibraryItemEntity {
-            LibraryItemEntity(id: NavigationPersistence.token(for: destination, root: root), name: name, detail: detail)
+    static func entity(for destination: LibraryDestination, root: URL?) -> LibraryItemEntity? {
+        let id = NavigationPersistence.token(for: destination, root: root)
+        switch destination {
+        case let .playlist(playlist): return LibraryItemEntity(id: id, name: playlist.name, detail: "Folder")
+        case let .album(album):
+            return LibraryItemEntity(id: id, name: album.name, detail: album.artist.map { "Album by \($0)" } ?? "Album")
+        case let .artist(artist): return LibraryItemEntity(id: id, name: artist.name, detail: "Artist")
+        case .nowPlaying: return nil
         }
-        return content.playlists.map { item(.playlist($0), $0.name, "Folder") }
-            + content.albums.map { item(.album($0), $0.name, $0.artist.map { "Album by \($0)" } ?? "Album") }
-            + content.artists.map { item(.artist($0), $0.name, "Artist") }
+    }
+
+    static func all(in content: LibraryContent, root: URL?) -> [LibraryItemEntity] {
+        let destinations = content.playlists.map(LibraryDestination.playlist)
+            + content.albums.map(LibraryDestination.album)
+            + content.artists.map(LibraryDestination.artist)
+        return destinations.compactMap { entity(for: $0, root: root) }
+    }
+
+    /// Exact names win, so "Blue" doesn't also offer everything containing it.
+    static func matching(_ query: String, in content: LibraryContent, root: URL?) -> [LibraryItemEntity] {
+        let matches = all(in: content, root: root).filter { $0.name.matchesSearch(query) }
+        let exact = matches.filter { $0.name.matchesSearchExactly(query) }
+        return exact.isEmpty ? matches : exact
+    }
+}
+
+extension MusicLibrary {
+    /// Intents can arrive on a cold launch or mid-scan; wait rather than report missing music.
+    func settledContent() async -> LibraryContent {
+        if isScanning || allTracks.isEmpty {
+            await waitForPendingWork()
+        }
+        return content
     }
 }
 
@@ -30,20 +56,23 @@ struct LibraryItemQuery: EntityStringQuery {
 
     @MainActor
     func entities(for identifiers: [String]) async throws -> [LibraryItemEntity] {
-        let items = LibraryItemEntity.all(in: library.content, root: library.rootURL)
-        return identifiers.compactMap { id in items.first { $0.id == id } }
+        let content = await library.settledContent()
+        return identifiers.compactMap { id in
+            NavigationPersistence.resolve(id, content: content, root: library.rootURL)
+                .flatMap { LibraryItemEntity.entity(for: $0, root: library.rootURL) }
+        }
     }
 
     /// Siri hands over what it heard; the app's search folding absorbs accents and punctuation.
     @MainActor
     func entities(matching string: String) async throws -> [LibraryItemEntity] {
-        LibraryItemEntity.all(in: library.content, root: library.rootURL).filter { $0.name.matchesSearch(string) }
+        await LibraryItemEntity.matching(string, in: library.settledContent(), root: library.rootURL)
     }
 
     /// Also what Siri learns names from, via updateAppShortcutParameters.
     @MainActor
     func suggestedEntities() async throws -> [LibraryItemEntity] {
-        LibraryItemEntity.all(in: library.content, root: library.rootURL)
+        await LibraryItemEntity.all(in: library.settledContent(), root: library.rootURL)
     }
 }
 
@@ -66,19 +95,15 @@ enum LibraryPlayback {
         guard let destination = NavigationPersistence.resolve(token, content: content, root: root) else {
             throw LibraryIntentError.notFound
         }
-        try play(tracks(for: destination), shuffled: shuffled, root: root, player: player)
+        try play(tracks(for: destination), shuffled: shuffled, player: player)
     }
 
     /// `shuffled` nil keeps the current mode. Shuffled playback starts on a random track.
     @MainActor
-    static func play(_ tracks: [Track], shuffled: Bool?, root: URL?, player: PlayerController) throws {
+    static func play(_ tracks: [Track], shuffled: Bool?, player: PlayerController) throws {
         guard let first = tracks.first else { throw LibraryIntentError.empty }
-        // A background launch has no UI to set this before the session is saved.
-        player.libraryRoot = root
-        if let shuffled {
-            player.setShuffle(shuffled)
-        }
-        player.play(player.isShuffling ? tracks.randomElement() ?? first : first, in: tracks)
+        let shuffling = shuffled ?? player.isShuffling
+        player.play(shuffling ? tracks.randomElement() ?? first : first, in: tracks, shuffled: shuffling)
     }
 
     static func tracks(for destination: LibraryDestination) -> [Track] {
@@ -103,7 +128,7 @@ struct PlayLibraryItemIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try LibraryPlayback.play(item.id, shuffled: nil, content: library.content, root: library.rootURL, player: player)
+        try await LibraryPlayback.play(item.id, shuffled: nil, content: library.settledContent(), root: library.rootURL, player: player)
         return .result()
     }
 }
@@ -120,7 +145,7 @@ struct ShuffleLibraryItemIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try LibraryPlayback.play(item.id, shuffled: true, content: library.content, root: library.rootURL, player: player)
+        try await LibraryPlayback.play(item.id, shuffled: true, content: library.settledContent(), root: library.rootURL, player: player)
         return .result()
     }
 }
@@ -134,7 +159,7 @@ struct ShuffleLibraryIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try LibraryPlayback.play(library.allTracks, shuffled: true, root: library.rootURL, player: player)
+        try await LibraryPlayback.play(library.settledContent().allTracks, shuffled: true, player: player)
         return .result()
     }
 }

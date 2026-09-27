@@ -32,6 +32,11 @@ extension String {
     func matchesSearch(_ query: String) -> Bool {
         foldedPunctuation.localizedStandardContains(query.foldedPunctuation)
     }
+
+    /// The whole string, under the same folding as `matchesSearch`.
+    func matchesSearchExactly(_ query: String) -> Bool {
+        foldedPunctuation.compare(query.foldedPunctuation, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
 }
 
 enum LibrarySearch {
