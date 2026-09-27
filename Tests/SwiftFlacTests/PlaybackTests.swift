@@ -118,6 +118,19 @@ struct PlaybackTests {
         #expect(player.isPlaying)
     }
 
+    @Test func unplayableFilesSkipAheadThenStop() async throws {
+        let store = try TestStore()
+        let tracks = try (1 ... 3).map { try Track(url: store.file("\($0).flac", data: Data("not audio".utf8))) }
+        let transport = AVPlayer()
+        transport.isMuted = true
+        let player = PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
+                                      activate: {}, metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 0 })
+        player.play(tracks[0], in: tracks)
+        try await eventually { !player.isPlaying }
+        #expect(player.currentTrack == tracks[2])
+        #expect(transport.currentItem?.status == .failed)
+    }
+
     @Test func interruptionsRespectResumePermissionAndPriorState() throws {
         let store = try TestStore()
         let player = testPlayer(store)

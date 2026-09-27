@@ -434,19 +434,17 @@ final class PlayerController {
         // duration of compressed audio, so tracks outrun their slider.
         let asset = AVURLAsset(url: track.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let item = AVPlayerItem(asset: asset)
-        if systemIntegration {
-            statusObservation = item.observe(\.status) { [weak self] item, _ in
-                let status = item.status
-                Task { @MainActor in
-                    guard let self, item === self.player.currentItem else { return }
-                    switch status {
-                    case .failed:
-                        self.currentTrackFailed()
-                    case .readyToPlay:
-                        self.consecutiveFailures = 0
-                    default:
-                        break
-                    }
+        statusObservation = item.observe(\.status) { [weak self] item, _ in
+            let status = item.status
+            Task { @MainActor in
+                guard let self, item === self.player.currentItem else { return }
+                switch status {
+                case .failed:
+                    self.currentTrackFailed()
+                case .readyToPlay:
+                    self.consecutiveFailures = 0
+                default:
+                    break
                 }
             }
         }
