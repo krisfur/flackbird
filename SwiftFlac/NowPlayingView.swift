@@ -167,6 +167,31 @@ struct ToggleIcon: View {
     }
 }
 
+/// Faint frequency bars behind the controls. Analysis only runs while this is on screen and playing.
+private struct SpectrumBars: View {
+    let monitor: SpectrumMonitor
+    let isPlaying: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isPlaying)) { _ in
+            let levels = monitor.update(isPlaying: isPlaying)
+            Canvas { context, size in
+                let gap: CGFloat = 3
+                let width = (size.width - gap * CGFloat(levels.count - 1)) / CGFloat(levels.count)
+                for (index, level) in levels.enumerated() {
+                    let height = max(2, CGFloat(level) * size.height)
+                    let rect = CGRect(x: CGFloat(index) * (width + gap), y: size.height - height, width: width, height: height)
+                    context.fill(Path(roundedRect: rect, cornerRadius: min(2, width / 2)), with: .color(.secondary.opacity(0.18)))
+                }
+            }
+        }
+        .opacity(isPlaying ? 1 : 0)
+        .animation(.easeOut(duration: 0.4), value: isPlaying)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct ArtworkSource: Equatable {
     let track: URL?
     let data: Data?
@@ -181,6 +206,7 @@ struct NowPlayingView: View {
     @State private var artworkMenu = GoToMenuController()
     @State private var infoMenu = GoToMenuController()
     @AppStorage("showAudioQuality") private var showAudioQuality = true
+    @AppStorage("showVisualizer") private var showVisualizer = false
 
     /// Matched on tags, the same way the library groups them: the playing
     /// track is not necessarily one of the deduplicated copies the album and
@@ -226,7 +252,16 @@ struct NowPlayingView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
         }
+        .background(alignment: .bottom) {
+            if showVisualizer {
+                SpectrumBars(monitor: player.spectrum, isPlaying: player.isPlaying)
+                    .frame(height: 90)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+        }
         .background(AppBackground())
+        .onAppear { player.visualizerEnabled = showVisualizer }
+        .onChange(of: showVisualizer) { player.visualizerEnabled = showVisualizer }
         // Full resolution here - this is the one place artwork is shown big -
         // but decoded once per track, not on every tick of the scrubber.
         .task(id: ArtworkSource(track: player.nowPlayingSource, data: player.nowPlaying.artworkData)) {

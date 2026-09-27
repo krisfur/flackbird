@@ -20,6 +20,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
     @AppStorage("showAudioQuality") private var showAudioQuality = true
+    @AppStorage("showVisualizer") private var showVisualizer = false
     @State private var showingFolderPicker = false
 
     private static let repositoryURL = URL(string: "https://github.com/krisfur/swiftflac")!
@@ -50,8 +51,9 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Show Audio Quality", isOn: $showAudioQuality)
+                    Toggle("Show Visualiser", isOn: $showVisualizer)
                 } footer: {
-                    Text("Shows the file's format, resolution, and bitrate under the scrubber. AirPlay and Bluetooth may play it at a different quality.")
+                    Text("Audio quality is the file's own format, resolution, and bitrate; AirPlay and Bluetooth may play it differently. The visualiser draws faint frequency bars behind the now-playing controls and is experimental.")
                 }
 
                 // Apps can't read or flip the Siri switch; this opens the Shortcuts page that has it.

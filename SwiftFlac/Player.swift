@@ -54,6 +54,19 @@ final class PlayerController {
     /// The track `nowPlaying` describes; nil while a new track's metadata loads.
     private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
+    @ObservationIgnored let spectrum = SpectrumMonitor()
+    /// Taps each track's audio for the visualiser; off costs nothing.
+    var visualizerEnabled = false {
+        didSet {
+            guard visualizerEnabled != oldValue, let item = player.currentItem else { return }
+            if visualizerEnabled {
+                attachSpectrum(to: item)
+            } else {
+                item.audioMix = nil
+            }
+        }
+    }
+
     private(set) var isShuffling = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var currentTime: TimeInterval = 0
@@ -512,6 +525,9 @@ final class PlayerController {
         }
         playbackActivation.cancel()
         seekGeneration += 1
+        if visualizerEnabled {
+            attachSpectrum(to: item)
+        }
         // Replacing an item on a running AVPlayer can start it immediately.
         // Hold playback until the new request has activated the audio session.
         player.pause()
@@ -563,6 +579,18 @@ final class PlayerController {
             let quality = await qualityLoader(track.url)
             guard item === player.currentItem else { return }
             audioQuality = quality
+        }
+    }
+
+    private func attachSpectrum(to item: AVPlayerItem) {
+        Task {
+            guard let track = try? await item.asset.loadTracks(withMediaType: .audio).first,
+                  visualizerEnabled, item.audioMix == nil, let tap = spectrum.buffer.makeTap() else { return }
+            let parameters = AVMutableAudioMixInputParameters(track: track)
+            parameters.audioTapProcessor = tap
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [parameters]
+            item.audioMix = mix
         }
     }
 
