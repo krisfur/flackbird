@@ -66,11 +66,3 @@ enum NavigationPersistence {
         }
     }
 }
-
-enum TrackSearch {
-    static func filter(_ tracks: [Track], query: String) -> [Track] {
-        guard !query.isEmpty else { return tracks }
-        let titles = tracks.filter { $0.displayTitle.matchesSearch(query) }
-        return titles.isEmpty ? tracks.filter { $0.artist?.matchesSearch(query) == true } : titles
-    }
-}

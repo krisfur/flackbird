@@ -679,10 +679,8 @@ struct TrackListView: View {
     var onPlay: () -> Void = {}
     @State private var searchText = ""
 
-    /// Titles first; if nothing matches, fall back to the artist so an
-    /// artist's name pulls up their songs.
     private var filteredTracks: [Track] {
-        TrackSearch.filter(tracks, query: searchText)
+        LibrarySearch.filter(tracks, query: searchText, name: \.displayTitle, artist: \.artist)
     }
 
     var body: some View {

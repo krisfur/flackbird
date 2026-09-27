@@ -9,13 +9,17 @@ struct NavigationAndSearchTests {
         #expect(pair.1.matchesSearch(pair.0.lowercased()))
     }
 
+    private func search(_ tracks: [Track], _ query: String) -> [Track] {
+        LibrarySearch.filter(tracks, query: query, name: \.displayTitle, artist: \.artist)
+    }
+
     @Test func titleSearchTakesPrecedenceOverArtistFallback() {
         let tracks = [Track(url: URL(fileURLWithPath: "/a.flac"), title: "Blue", artist: "Other"),
                       Track(url: URL(fileURLWithPath: "/b.flac"), title: "Red", artist: "Blue Artist")]
-        #expect(TrackSearch.filter(tracks, query: "Blue") == [tracks[0]])
-        #expect(TrackSearch.filter(tracks, query: "Blue Artist") == [tracks[1]])
-        #expect(TrackSearch.filter(tracks, query: "").count == 2)
-        #expect(TrackSearch.filter(tracks, query: "absent").isEmpty)
+        #expect(search(tracks, "Blue") == [tracks[0]])
+        #expect(search(tracks, "Blue Artist") == [tracks[1]])
+        #expect(search(tracks, "").count == 2)
+        #expect(search(tracks, "absent").isEmpty)
     }
 
     @Test func navigationSurvivesContainerRelocationAndMissingDestinations() {

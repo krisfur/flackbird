@@ -34,6 +34,16 @@ extension String {
     }
 }
 
+enum LibrarySearch {
+    /// Names first; if nothing matches, fall back to the artist so an
+    /// artist's name pulls up their items.
+    static func filter<Item>(_ items: [Item], query: String, name: (Item) -> String, artist: (Item) -> String?) -> [Item] {
+        guard !query.isEmpty else { return items }
+        let byName = items.filter { name($0).matchesSearch(query) }
+        return byName.isEmpty ? items.filter { artist($0)?.matchesSearch(query) == true } : byName
+    }
+}
+
 extension View {
     /// Hides the on-screen keyboard as soon as the user scrolls the
     /// content below the search field.
@@ -175,15 +185,8 @@ struct AlbumsView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
 
-    /// Album names first; if nothing matches, fall back to the artist so
-    /// an artist's name pulls up their albums.
     private var filteredAlbums: [Album] {
-        guard !searchText.isEmpty else { return library.albums }
-        let byName = library.albums.filter { $0.name.matchesSearch(searchText) }
-        if !byName.isEmpty {
-            return byName
-        }
-        return library.albums.filter { $0.artist?.matchesSearch(searchText) == true }
+        LibrarySearch.filter(library.albums, query: searchText, name: \.name, artist: \.artist)
     }
 
     var body: some View {
