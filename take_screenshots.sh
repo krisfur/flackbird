@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 WHAT="${1:-all}"
-BUNDLE_ID="com.kfurman.SwiftFlac.dev2026"
+BUNDLE_ID="com.kfurman.swiftflacplayer"
 LIBRARY="$PWD/build/demo-library"
 OUT="$PWD/screenshots"
 QA="$PWD/build/screenshot-qa"
