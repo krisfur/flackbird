@@ -8,7 +8,7 @@ What was needed to get Flackbird ready for review, and why. Kept in the repo so 
 
 ## Notes for App Review
 
-Paste this into the "Notes" field of App Review Information in App Store Connect (it fits the 4,000-character limit), and attach the screen recording there too. It exists because the app ships with no music: without instructions a reviewer opens it, sees an empty library, and has nothing to test. Apple also asks first-time developers for a description of the app, its external services, regional differences, and any third-party material, plus a screen recording on a physical device starting from launch; those answers are folded in here so later submissions carry them.
+For the iOS version, paste this into the "Notes" field of App Review Information in App Store Connect (it fits the 4,000-character limit), and attach the screen recording there too. It exists because the app ships with no music: without instructions a reviewer opens it, sees an empty library, and has nothing to test. Apple also asks first-time developers for a description of the app, its external services, regional differences, and any third-party material, plus a screen recording on a physical device starting from launch; those answers are folded in here so later submissions carry them.
 
 > PURPOSE AND AUDIENCE
 > Flackbird is an offline music player for music files people already own, such as FLAC files bought from download stores or ripped from CDs. It is for listeners who keep their own music library, especially lossless audio, and want to play it without a streaming subscription, account, or internet connection. It turns a folder of files into a browsable library of playlists, albums, and artists using the files' own tags and cover art, and shows the audio quality of each file.
@@ -44,6 +44,39 @@ Paste this into the "Notes" field of App Review Information in App Store Connect
 > - No permission prompts. The app reads only files in its own folder or a folder the user picks.
 > - Background audio keeps playback going when the screen locks.
 > - The only web link is the GitHub link in Settings, which opens Safari.
+
+For the macOS version, use these instead, with a recording made on a Mac. They swap the iPhone setup for choosing a folder, and describe the Mac controls.
+
+> PURPOSE AND AUDIENCE
+> Flackbird is an offline music player for music files people already own, such as FLAC files bought from download stores or ripped from CDs. It is for listeners who keep their own music library, especially lossless audio, and want to play it without a streaming subscription, account, or internet connection. It turns a folder of files into a browsable library of playlists, albums, and artists using the files' own tags and cover art, and shows the audio quality of each file.
+>
+> SETUP (about 30 seconds, no login)
+> The app ships with no music, so one audio file is needed:
+> 1. In Safari, open https://krisfur.github.io/flackbird/sample.flac (it saves to Downloads).
+> 2. Open Flackbird, click the gear icon (Settings) at the top right of the window, then Choose Folder..., and pick Downloads.
+> 3. The track appears under All Tracks and Albums. Click it to play.
+> Any folder of .flac, .mp3, .m4a, .wav, or .aiff files works the same way; each subfolder becomes a playlist. The app remembers the chosen folder through a security-scoped bookmark.
+>
+> MAIN FEATURES
+> Browse by Folders, Albums, Artists, and All Tracks in the sidebar; search; click a track to play. The bar at the bottom of the window controls playback; click it to open the full player (seeking, shuffle, repeat, and the audio quality line). The Space bar plays and pauses, and the Playback menu has Play/Pause, Next (Command-Right Arrow), and Previous (Command-Left Arrow). Media keys and Now Playing in Control Center work as with other players. Settings (gear icon) has folder choice and appearance.
+> Siri and Shortcuts: requests such as "Shuffle my library in Flackbird" or "Play <folder, album, or artist> in Flackbird" play music, and the same actions appear in the Shortcuts app. As with any app's shortcuts, Siri must first be turned on for Flackbird in the Shortcuts app.
+>
+> RECORDING
+> The attached recording was made on a Mac running the latest macOS, starting from launching the app. The music shown is my own personal library of purchased and ripped files; the app itself provides no content.
+>
+> EXTERNAL SERVICES
+> None. No servers, SDKs, authentication, payments, analytics, or AI services, and no network connections. Only Apple frameworks (SwiftUI, AVFoundation, MediaPlayer, App Intents) running on the device.
+>
+> REGIONAL DIFFERENCES
+> None. The app works identically in all regions. It is not offered in China mainland.
+>
+> REGULATED INDUSTRY OR THIRD-PARTY MATERIAL
+> Not applicable. No regulated industry, and no third-party content: the app ships no music and plays only files the user provides. The sample track and App Store screenshot content are generated by me.
+>
+> OTHER NOTES
+> - No account, login, purchases, or subscriptions. Everything is free.
+> - The app is sandboxed and reads only the folder the user picks. No permission prompts beyond the standard folder picker.
+> - The only web link is the GitHub link in Settings, which opens in the browser.
 
 ## The sample track
 
