@@ -1,10 +1,12 @@
 <p align="center">
-  <img src="swiftflac-icon.svg" width="128" alt="SwiftFlac icon">
+  <img src="swiftflac-icon.svg" width="128" alt="Flackbird icon">
 </p>
 
-# SwiftFlac
+# Flackbird
 
 ![Swift](https://img.shields.io/badge/Swift-F05138?style=flat&logo=swift&logoColor=white)
+
+Formerly SwiftFlac; the repository and Xcode project keep that name.
 
 Minimalist local music player for iOS, iPadOS, and macOS. Built with `SwiftUI` and first-party Apple frameworks. Plays FLAC, MP3, M4A/AAC, ALAC, WAV, and AIFF.
 
@@ -17,7 +19,7 @@ The now-playing screen can show each file's format, bit depth, sample rate, and 
 
 Folders are playlists: point it at a music folder and each subfolder becomes a playlist, with album, artist, and all-track views built from the files' own tags and embedded cover art.
 
-Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Trip in SwiftFlac", "Shuffle my library in SwiftFlac") and turn shuffle or repeat on and off. If Siri says SwiftFlac doesn't support a request, open SwiftFlac's page in the Shortcuts app (Settings → Siri & Shortcuts links there), tap ⓘ at the top right, and turn on Siri.
+Siri and Shortcuts can play or shuffle a folder, album, or artist ("Play Road Trip in Flackbird", "Shuffle my library in Flackbird") and turn shuffle or repeat on and off. If Siri says Flackbird doesn't support a request, open Flackbird's page in the Shortcuts app (Settings → Siri & Shortcuts links there), tap ⓘ at the top right, and turn on Siri.
 
 ## Screenshots
 
@@ -71,7 +73,7 @@ A free Apple ID is enough, no paid developer account needed:
 3. Open the project in Xcode, target → Signing & Capabilities → tick "Automatically manage signing" and pick your team.
 4. Select the iPhone as run destination and hit Run. On first launch, trust the certificate on the phone under Settings → General → VPN & Device Management.
 
-Free-account builds expire after 7 days; hit Run again to re-sign. Add music via Finder file sharing (iPhone → Files → SwiftFlac) and rescan from the ⋯ menu.
+Free-account builds expire after 7 days; hit Run again to re-sign. Add music via Finder file sharing (iPhone → Files → Flackbird) and rescan from Settings (the gear icon).
 
 ## Tests
 

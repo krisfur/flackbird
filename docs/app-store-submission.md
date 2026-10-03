@@ -1,43 +1,49 @@
 ---
-title: SwiftFlac App Store Submission
+title: Flackbird App Store Submission
 ---
 
 # App Store submission
 
-What was needed to get SwiftFlac ready for review, and why. Kept in the repo so the reasoning survives, and because most of it applies to any small, free, offline app.
+What was needed to get Flackbird ready for review, and why. Kept in the repo so the reasoning survives, and because most of it applies to any small, free, offline app.
 
 ## Notes for App Review
 
-Paste this into the "Notes for Review" field in App Store Connect. It exists because the app ships with no music: without instructions a reviewer opens it, sees an empty library, and has nothing to test. That is the most likely cause of a rejection under guideline 2.1 (App Completeness) for an app like this.
+Paste this into the "Notes" field of App Review Information in App Store Connect (it fits the 4,000-character limit), and attach the screen recording there too. It exists because the app ships with no music: without instructions a reviewer opens it, sees an empty library, and has nothing to test. Apple also asks first-time developers for a description of the app, its external services, regional differences, and any third-party material, plus a screen recording on a physical device starting from launch; those answers are folded in here so later submissions carry them.
 
-> SwiftFlac is an offline music player for music files you already own. It ships with no music, so it needs one audio file added before there is anything to play. This takes about 30 seconds:
+> PURPOSE AND AUDIENCE
+> Flackbird is an offline music player for music files people already own, such as FLAC files bought from download stores or ripped from CDs. It is for listeners who keep their own music library, especially lossless audio, and want to play it without a streaming subscription, account, or internet connection. It turns a folder of files into a browsable library of playlists, albums, and artists using the files' own tags and cover art, and shows the audio quality of each file.
 >
-> 1. Open Safari and go to: https://krisfur.github.io/swiftflac/sample.flac
-> 2. The file downloads. Tap the download, then "Save to Files".
-> 3. Choose On My iPad (or On My iPhone) > SwiftFlac, and tap Save.
-> 4. Open SwiftFlac. The track appears under All Tracks and Albums. Tap it to play.
+> SETUP (about 30 seconds, no login)
+> The app ships with no music, so one audio file is needed:
+> iPhone/iPad:
+> 1. In Safari, open https://krisfur.github.io/swiftflac/sample.flac
+> 2. Tap the download, then "Save to Files".
+> 3. Choose On My iPhone (or On My iPad) > Flackbird, and tap Save.
+> 4. Open Flackbird. The track appears under All Tracks and Albums. Tap it to play.
+> Alternatively, drag any .flac, .mp3, .m4a, .wav, or .aiff file into the Flackbird folder under Files sharing in Finder.
+> Mac: open the same link in Safari (it saves to Downloads), then in Flackbird click the gear icon (Settings) > Choose Folder... and pick Downloads.
 >
-> Alternatively, connect the device to a Mac and drag any .flac, .mp3, .m4a, .wav, or .aiff file into the SwiftFlac folder under Files sharing in Finder.
+> MAIN FEATURES
+> Browse by Folders, Albums, Artists, and All Tracks; search; tap a track to play; open the full player from the bar at the bottom for seeking, shuffle, repeat, and the audio quality line; lock screen and Control Center controls; Settings (gear icon) for folder choice and appearance.
+> Siri and Shortcuts: requests such as "Shuffle my library in Flackbird" or "Play <folder, album, or artist> in Flackbird" play music, and the same actions appear in the Shortcuts app. Siri must first be turned on for Flackbird: Settings (gear icon) > Siri & Shortcuts opens Flackbird's page in the Shortcuts app; tap the (i) button at the top right and turn on Siri.
 >
-> On Mac:
+> RECORDING
+> The attached recording was made on a physical iPhone running the latest iOS. The music shown is my own personal library, copied onto the device through the Files app; the app itself provides no content. Lock screen controls are supported but can't be captured, as screen recording stops when the device locks.
 >
-> 1. Open the same link in Safari; the file downloads to Downloads.
-> 2. Open SwiftFlac, click the gear icon (Settings), then Choose Folder..., and pick Downloads.
-> 3. The track appears under All Tracks and Albums. Click it to play.
+> EXTERNAL SERVICES
+> None. No servers, SDKs, authentication, payments, analytics, or AI services, and no network connections. Only Apple frameworks (SwiftUI, AVFoundation, MediaPlayer, App Intents) running on the device.
 >
-> The app also accepts any folder via the gear icon (Settings) > Choose Folder. Each subfolder inside the chosen folder becomes a playlist.
+> REGIONAL DIFFERENCES
+> None. The app works identically in all regions. It is not offered in China mainland.
 >
-> Siri and Shortcuts: requests such as "Shuffle my library in SwiftFlac" or "Play <folder, album, or artist> in SwiftFlac" play music, and the same actions appear in the Shortcuts app. As with any app's shortcuts, Siri must first be turned on for SwiftFlac: open Settings (gear icon) > Siri & Shortcuts, which opens SwiftFlac's page in the Shortcuts app, tap the info (i) button at the top right, and turn on Siri.
+> REGULATED INDUSTRY OR THIRD-PARTY MATERIAL
+> Not applicable. No regulated industry, and no third-party content: the app ships no music and plays only files the user provides. The sample track and App Store screenshot content are generated by me.
 >
-> Notes on the app:
->
-> - No account, no login, no purchases, no subscriptions. Everything is free.
-> - No network access whatsoever. The app works fully in airplane mode. The only web link is the GitHub link in Settings (gear icon), which opens Safari.
-> - No data is collected or transmitted. No analytics, no tracking, no third-party SDKs.
-> - No permission prompts. The app reads only files you place in its own folder or a folder you explicitly pick.
-> - Background audio is used so playback continues when the screen locks, with standard Control Centre and lock screen controls.
->
-> Contact for any questions: k_furman@outlook.com
+> OTHER NOTES
+> - No account, login, purchases, or subscriptions. Everything is free.
+> - No permission prompts. The app reads only files in its own folder or a folder the user picks.
+> - Background audio keeps playback going when the screen locks.
+> - The only web link is the GitHub link in Settings, which opens Safari.
 
 ## The sample track
 
@@ -56,6 +62,8 @@ The file is about 94 KB: a 5 second mono tone plus a 600x600 cover. The cover ma
 **Code signing.** `CODE_SIGN_IDENTITY` for macOS was pinned to `-` (ad-hoc) in both build configurations, which overrides automatic signing and cannot produce a distributable archive. It is now Debug only, so local builds still need no provisioning profile.
 
 **Accessibility.** The transport, shuffle, repeat, and search-clear controls are icon-only, so VoiceOver announced the SF Symbol name. They now carry labels, with shuffle and repeat exposing their state as an accessibility value rather than folding it into the label.
+
+**App name.** The app was first submitted as SwiftFlac and rejected under guideline 5.2.5 (Intellectual Property): "Swift" is an Apple trademark. It was renamed Flackbird, keeping the bundle ID (`com.kfurman.swiftflacplayer`), the repository, and the Xcode project and module names, none of which users see. The sample track's tags were regenerated with the new name, since reviewers see them in the app.
 
 **Privacy policy.** Required for every app in App Store Connect, including apps that collect nothing. Served from this site at [privacy](privacy.md), so the published text lives with the code and cannot drift from it. It covers the one on-device sharing there is: folder, album, and artist names given to the system for Siri and Shortcuts.
 

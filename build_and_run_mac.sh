@@ -13,4 +13,4 @@ xcodebuild -project SwiftFlac.xcodeproj -scheme SwiftFlac -configuration Debug \
 # Known limitation: the macOS 26 Dock shows a placeholder icon for apps
 # launched from build directories; the real icon appears when the app is
 # run from /Applications or ~/Applications.
-open "build/Build/Products/Debug/SwiftFlac.app"
+open "build/Build/Products/Debug/Flackbird.app"

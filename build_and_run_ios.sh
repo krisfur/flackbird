@@ -25,7 +25,7 @@ mkdir -p build && touch build/.metadata_never_index
 xcodebuild -project SwiftFlac.xcodeproj -scheme SwiftFlac -configuration Debug \
     -destination "id=$UDID" -derivedDataPath build build
 
-APP="build/Build/Products/Debug-iphonesimulator/SwiftFlac.app"
+APP="build/Build/Products/Debug-iphonesimulator/Flackbird.app"
 xcrun simctl install "$UDID" "$APP"
 # Read from the build so it follows APP_BUNDLE_IDENTIFIER.
 BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist")

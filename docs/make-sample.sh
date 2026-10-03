@@ -15,8 +15,8 @@ swift sample-cover.swift "$WORK/cover.png"
 
 ffmpeg -loglevel error -y -i "$WORK/tone.wav" -c:a flac -compression_level 12 \
     -metadata title="Sample Tone" \
-    -metadata artist="SwiftFlac" \
-    -metadata album="SwiftFlac Sample" \
+    -metadata artist="Flackbird" \
+    -metadata album="Flackbird Sample" \
     -metadata date="2026" \
     -metadata comment="Original test tone, no rights reserved. Public domain." \
     sample.flac

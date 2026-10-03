@@ -81,8 +81,8 @@ enum LibraryIntentError: Error, CustomLocalizedStringResourceConvertible {
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
-        case .notFound: "That isn't in your SwiftFlac library."
-        case .empty: "There's nothing to play in your SwiftFlac library yet."
+        case .notFound: "That isn't in your Flackbird library."
+        case .empty: "There's nothing to play in your Flackbird library yet."
         }
     }
 }

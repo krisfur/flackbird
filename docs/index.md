@@ -1,8 +1,8 @@
 ---
-title: SwiftFlac
+title: Flackbird
 ---
 
-# SwiftFlac
+# Flackbird
 
 Minimalist local music player for iOS, iPadOS, and macOS. Built with SwiftUI and first-party Apple frameworks. Plays FLAC, MP3, M4A/AAC, ALAC, WAV, and AIFF.
 
