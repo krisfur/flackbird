@@ -15,13 +15,11 @@ For the iOS version, paste this into the "Notes" field of App Review Information
 >
 > SETUP (about 30 seconds, no login)
 > The app ships with no music, so one audio file is needed:
-> iPhone/iPad:
 > 1. In Safari, open https://krisfur.github.io/flackbird/sample.flac
 > 2. Tap the download, then "Save to Files".
 > 3. Choose On My iPhone (or On My iPad) > Flackbird, and tap Save.
 > 4. Open Flackbird. The track appears under All Tracks and Albums. Tap it to play.
 > Alternatively, drag any .flac, .mp3, .m4a, .wav, or .aiff file into the Flackbird folder under Files sharing in Finder.
-> Mac: open the same link in Safari (it saves to Downloads), then in Flackbird click the gear icon (Settings) > Choose Folder... and pick Downloads.
 >
 > MAIN FEATURES
 > Browse by Folders, Albums, Artists, and All Tracks; search; tap a track to play; open the full player from the bar at the bottom for seeking, shuffle, repeat, and the audio quality line; lock screen and Control Center controls; Settings (gear icon) for folder choice and appearance.
