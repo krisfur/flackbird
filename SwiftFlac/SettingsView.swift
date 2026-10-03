@@ -24,7 +24,7 @@ struct SettingsView: View {
     @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
     @State private var showingFolderPicker = false
 
-    private static let repositoryURL = URL(string: "https://github.com/krisfur/swiftflac")!
+    private static let repositoryURL = URL(string: "https://github.com/krisfur/flackbird")!
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
@@ -76,9 +76,9 @@ struct SettingsView: View {
                     Text("Siri & Shortcuts")
                 } footer: {
                     #if os(iOS)
-                        Text("In Shortcuts, tap \(Image(systemName: "info.circle")) at the top right and turn on Siri to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                        Text("In Shortcuts, tap \(Image(systemName: "info.circle")) at the top right and turn on Siri to use voice commands like \"Shuffle my library in Flackbird\".")
                     #else
-                        Text("Turn on Siri for SwiftFlac in Shortcuts to use voice commands like \"Shuffle my library in SwiftFlac\".")
+                        Text("Turn on Siri for Flackbird in Shortcuts to use voice commands like \"Shuffle my library in Flackbird\".")
                     #endif
                 }
 
@@ -89,7 +89,7 @@ struct SettingsView: View {
                             .frame(width: 48, height: 48)
                             .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("SwiftFlac")
+                            Text("Flackbird")
                                 .font(.headline)
                             Text("Version \(version) · MIT License")
                                 .font(.footnote)

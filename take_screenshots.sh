@@ -39,7 +39,7 @@ prepare() {
     xcrun simctl status_bar "$id" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 >/dev/null
     xcrun simctl uninstall "$id" "$BUNDLE_ID" 2>/dev/null || true
-    xcrun simctl install "$id" build/screenshots-ios/Build/Products/Debug-iphonesimulator/SwiftFlac.app >/dev/null
+    xcrun simctl install "$id" build/screenshots-ios/Build/Products/Debug-iphonesimulator/Flackbird.app >/dev/null
     local documents
     documents="$(xcrun simctl get_app_container "$id" "$BUNDLE_ID" data)/Documents"
     mkdir -p "$documents"
@@ -113,16 +113,16 @@ mac_shoot() {
     local screen="$1" appearance="$2" file="$3" background
     [[ "$appearance" == dark ]] && background=0x1c1e22 || background=0xe6eaf0
     # Launched through LaunchServices so it comes to the front; a bare exec stays inactive.
-    local app="$PWD/build/screenshots-mac/Build/Products/Debug/SwiftFlac.app"
+    local app="$PWD/build/screenshots-mac/Build/Products/Debug/Flackbird.app"
     open -n "$app" --env SWIFTFLAC_SCREEN="$screen" --env SWIFTFLAC_APPEARANCE="$appearance" \
         --env SWIFTFLAC_LIBRARY="$LIBRARY"
     sleep 1
     local pid
-    pid=$(pgrep -n -f "$app/Contents/MacOS/SwiftFlac")
+    pid=$(pgrep -n -f "$app/Contents/MacOS/Flackbird")
     sleep "$SETTLE"
     local windows=() line
     while read -r line; do windows+=("$line"); done < <(build/window-bounds "$pid")
-    [[ ${#windows[@]} -gt 0 ]] || { kill "$pid"; echo "no SwiftFlac window found" >&2; return 1; }
+    [[ ${#windows[@]} -gt 0 ]] || { kill "$pid"; echo "no Flackbird window found" >&2; return 1; }
     local inputs=() filter="" index=0 main_pixels="" main_x=0 main_y=0 scale=1 left=0 top=0 canvas_w=1280 canvas_h=800
     for line in "${windows[@]}"; do
         read -r id x y w h <<<"$line"
