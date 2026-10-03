@@ -16,7 +16,7 @@ Paste this into the "Notes" field of App Review Information in App Store Connect
 > SETUP (about 30 seconds, no login)
 > The app ships with no music, so one audio file is needed:
 > iPhone/iPad:
-> 1. In Safari, open https://krisfur.github.io/swiftflac/sample.flac
+> 1. In Safari, open https://krisfur.github.io/flackbird/sample.flac
 > 2. Tap the download, then "Save to Files".
 > 3. Choose On My iPhone (or On My iPad) > Flackbird, and tap Save.
 > 4. Open Flackbird. The track appears under All Tracks and Albums. Tap it to play.

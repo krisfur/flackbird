@@ -24,7 +24,7 @@ struct SettingsView: View {
     @AppStorage(PlayerController.visualizerKey) private var showVisualizer = true
     @State private var showingFolderPicker = false
 
-    private static let repositoryURL = URL(string: "https://github.com/krisfur/swiftflac")!
+    private static let repositoryURL = URL(string: "https://github.com/krisfur/flackbird")!
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"

@@ -47,4 +47,4 @@ Any changes will be published on this page with an updated date above. Since the
 
 ## Contact
 
-Questions about this policy can go to [k_furman@outlook.com](mailto:k_furman@outlook.com), or to the [issue tracker](https://github.com/krisfur/swiftflac/issues).
+Questions about this policy can go to [k_furman@outlook.com](mailto:k_furman@outlook.com), or to the [issue tracker](https://github.com/krisfur/flackbird/issues).
