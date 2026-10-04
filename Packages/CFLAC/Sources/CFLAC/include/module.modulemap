@@ -1,0 +1,4 @@
+module CFLAC {
+    header "FLAC/stream_decoder.h"
+    export *
+}

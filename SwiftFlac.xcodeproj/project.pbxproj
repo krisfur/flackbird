@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AE5700000000000000000070 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = AE57000000000000000000C8 /* Fixtures */; };
+		F1AC0000000000000000F001 /* CFLAC in Frameworks */ = {isa = PBXBuildFile; productRef = F1AC0000000000000000F003 /* CFLAC */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F1AC0000000000000000F001 /* CFLAC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,6 +122,7 @@
 			);
 			name = SwiftFlac;
 			packageProductDependencies = (
+				F1AC0000000000000000F003 /* CFLAC */,
 			);
 			productName = SwiftFlac;
 			productReference = F1AC00000000000000000001 /* Flackbird.app */;
@@ -153,6 +156,9 @@
 			);
 			mainGroup = F1AC00000000000000000004;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F1AC0000000000000000F002 /* XCLocalSwiftPackageReference "Packages/CFLAC" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F1AC00000000000000000005 /* Products */;
 			projectDirPath = "";
@@ -382,7 +388,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Support/Info.plist;
@@ -418,7 +424,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Support/SwiftFlac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Support/Info.plist;
@@ -477,6 +483,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F1AC0000000000000000F002 /* XCLocalSwiftPackageReference "Packages/CFLAC" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CFLAC;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F1AC0000000000000000F003 /* CFLAC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1AC0000000000000000F002 /* XCLocalSwiftPackageReference "Packages/CFLAC" */;
+			productName = CFLAC;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F1AC0000000000000000000A /* Project object */;
 }

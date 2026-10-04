@@ -56,7 +56,8 @@ enum PlaybackAudioSession {
         #if os(iOS)
             try await Task.detached(priority: .userInitiated) {
                 let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default)
+                // Long-form routing gives AirPlay 2 its buffered, multi-room playback.
+                try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
                 #if compiler(>=6.4)
                     if #available(iOS 27.0, *) {
                         guard try await session.activate() else { throw ActivationError.declined }

@@ -46,8 +46,7 @@ struct AudioQualityTests {
                                       activate: {}, metadataLoader: { _ in TrackMetadata() },
                                       qualityLoader: { url in
                                           url == tracks[0].url ? await gate.wait() : AudioQuality(format: "MP3", kilobitsPerSecond: 320)
-                                      },
-                                      durationLoader: { _ in 120 })
+                                      })
         player.play(tracks[0], in: tracks)
         await gate.waitUntilEntered()
         player.next()

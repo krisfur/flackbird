@@ -228,7 +228,7 @@ struct ToggleIcon: View {
 }
 
 /// Faint frequency bars. Analysis only runs while visible and playing; paused they
-/// rest at their minimum, and they hide when no audio reaches the tap (AirPlay).
+/// rest at their minimum, and they hide over AirPlay or with no audio to show.
 struct SpectrumBars: View {
     let monitor: SpectrumMonitor
     let isPlaying: Bool
@@ -238,20 +238,11 @@ struct SpectrumBars: View {
     /// TimelineView keeps ticking in the background otherwise, waking the CPU at 60 Hz.
     @Environment(\.scenePhase) private var scenePhase
 
-    /// The tap sees audio before the hardware plays it: a little on the speaker, ~200 ms over Bluetooth.
-    private static var outputLatency: TimeInterval {
-        #if os(iOS)
-            AVAudioSession.sharedInstance().outputLatency
-        #else
-            0
-        #endif
-    }
-
     var body: some View {
         let animating = isPlaying && scenePhase != .background
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !animating)) { timeline in
             let levels = animating
-                ? monitor.update(delay: Self.outputLatency, at: timeline.date)
+                ? monitor.update(at: timeline.date)
                 : [Float](repeating: 0, count: SpectrumMonitor.bandCount)
             let visible = !isAirPlaying && (!isPlaying || monitor.hasSignal)
             Canvas { context, size in
@@ -348,18 +339,14 @@ struct NowPlayingView: View {
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)
+        // No AirPlay button: macOS's picker routes an AVPlayer, and the system Sound menu routes ours.
         .frame(minWidth: 420, minHeight: 540)
-        .overlay(alignment: .topTrailing) {
-            AirPlayButton(player: player.routePickerPlayer)
-                .frame(width: 24, height: 24)
-                .padding(12)
-        }
         #endif
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                AirPlayButton(player: player.routePickerPlayer)
+                AirPlayButton()
                     .frame(width: 28, height: 28)
             }
         }
@@ -507,8 +494,6 @@ private func formatted(_ time: TimeInterval) -> String {
 
 #if os(iOS)
     struct AirPlayButton: UIViewRepresentable {
-        let player: AVPlayer?
-
         func makeUIView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
             picker.backgroundColor = .clear
@@ -518,19 +503,6 @@ private func formatted(_ time: TimeInterval) -> String {
         }
 
         func updateUIView(_: AVRoutePickerView, context _: Context) {}
-    }
-#else
-    struct AirPlayButton: NSViewRepresentable {
-        let player: AVPlayer?
-
-        func makeNSView(context _: Context) -> AVRoutePickerView {
-            let picker = AVRoutePickerView()
-            picker.player = player
-            picker.isRoutePickerButtonBordered = false
-            return picker
-        }
-
-        func updateNSView(_: AVRoutePickerView, context _: Context) {}
     }
 #endif
 

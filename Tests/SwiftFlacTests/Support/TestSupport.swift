@@ -76,21 +76,21 @@ actor AsyncGate<Value: Sendable> {
 
 @MainActor
 final class FakeTransport: PlaybackTransport {
-    var currentItem: AVPlayerItem?
-    var avPlayer: AVPlayer? {
-        nil
-    }
-
-    var time: Double = 0
+    var onEvent: ((PlaybackEvent) -> Void)?
+    var spectrum: SpectrumBuffer?
+    var currentTime: TimeInterval = 0
+    var loads: [(url: URL, time: TimeInterval)] = []
     var plays = 0
     var pauses = 0
-    var seeks: [(Double, @Sendable (Bool) -> Void)] = []
-    func currentTime() -> CMTime {
-        CMTime(seconds: time, preferredTimescale: 600)
-    }
+    var seeks: [TimeInterval] = []
+    /// Reported after each load, as the engine does once the file is open.
+    var loadedDuration: TimeInterval = 120
 
-    func replaceCurrentItem(with item: AVPlayerItem?) {
-        currentItem = item; time = 0
+    func load(_ url: URL, at time: TimeInterval) {
+        loads.append((url, time))
+        currentTime = time
+        let duration = loadedDuration
+        Task { @MainActor in self.onEvent?(.loaded(duration: duration)) }
     }
 
     func play() {
@@ -101,16 +101,9 @@ final class FakeTransport: PlaybackTransport {
         pauses += 1
     }
 
-    func seek(to time: CMTime, toleranceBefore _: CMTime, toleranceAfter _: CMTime,
-              completionHandler: @escaping @Sendable (Bool) -> Void)
-    {
-        seeks.append((time.seconds, completionHandler))
-    }
-
-    func completeSeek(at index: Int = 0) {
-        let seek = seeks.remove(at: index)
-        time = seek.0
-        seek.1(true)
+    func seek(to time: TimeInterval) {
+        seeks.append(time)
+        currentTime = time
     }
 }
 
@@ -121,7 +114,7 @@ func testPlayer(_ store: TestStore, transport: FakeTransport = FakeTransport(),
 {
     PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
                      activate: activate, metadataLoader: { TrackMetadata(title: $0.title, artist: $0.artist, album: $0.album) },
-                     durationLoader: { _ in 120 }, now: now)
+                     now: now)
 }
 
 func testTracks(root: URL, count: Int = 3) -> [Track] {

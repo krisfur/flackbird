@@ -55,19 +55,13 @@ final class PlayerController {
     private(set) var nowPlayingSource: URL?
     private(set) var audioQuality: AudioQuality?
     @ObservationIgnored let spectrum = SpectrumMonitor()
-    /// AirPlay bypasses the audio tap, so the visualiser hides.
+    /// AirPlay's delay puts the bars out of sync, so the visualiser hides.
     private(set) var isAirPlaying = false
     static let visualizerKey = "showVisualizer"
-    /// Taps each track's audio for the visualiser; off costs nothing. Adding or removing a
-    /// tap mid-playback hiccups, so while playing a change waits for the next track.
+    /// Taps the decoded audio for the visualiser; off costs nothing.
     var visualizerEnabled = false {
         didSet {
-            guard visualizerEnabled != oldValue, !isPlaying, let item = player.currentItem else { return }
-            if visualizerEnabled {
-                attachSpectrum(to: item)
-            } else {
-                item.audioMix = nil
-            }
+            player.spectrum = visualizerEnabled ? spectrum.buffer : nil
         }
     }
 
@@ -81,22 +75,16 @@ final class PlayerController {
     private let systemIntegration: Bool
     private let metadataLoader: @Sendable (Track) async -> TrackMetadata
     private let qualityLoader: @Sendable (URL) async -> AudioQuality?
-    private let durationLoader: @MainActor (AVPlayerItem) async -> Double
     private let playbackActivation: PlaybackActivation
     private let now: () -> Date
-    private var seekGeneration = 0
+    /// Bumped per track, so late async results for an earlier one are dropped.
+    private var loadToken = 0
     @ObservationIgnored private(set) var nowPlayingInfo: [String: Any]?
     private static let logger = Logger(subsystem: "com.kfurman.SwiftFlac", category: "Playback")
-    /// The macOS route picker needs the player reference to offer AirPlay.
-    var routePickerPlayer: AVPlayer? {
-        player.avPlayer
-    }
 
     private var originalQueue: [Track] = []
-    private var timeObserver: Any?
-    private var isSeeking = false
+    private var timeUpdates: Timer?
     @ObservationIgnored private(set) var metadataTask: Task<Void, Never>?
-    private var statusObservation: NSKeyValueObservation?
     private var consecutiveFailures = 0
     private var resumeAfterInterruption = false
 
@@ -143,24 +131,25 @@ final class PlayerController {
         activate: @escaping @Sendable () async throws -> Void = PlaybackAudioSession.activate,
         metadataLoader: @escaping @Sendable (Track) async -> TrackMetadata = loadMetadata,
         qualityLoader: @escaping @Sendable (URL) async -> AudioQuality? = AudioQuality.read,
-        durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
-            await (try? $0.asset.load(.duration))?.seconds ?? 0
-        },
         now: @escaping () -> Date = Date.init
     ) {
-        player = transport ?? AVPlayer()
+        player = transport ?? AudioRendererTransport()
         self.defaults = defaults
         self.systemIntegration = systemIntegration
         self.metadataLoader = metadataLoader
         self.qualityLoader = qualityLoader
-        self.durationLoader = durationLoader
         self.now = now
         playbackActivation = PlaybackActivation(activate: activate)
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
         repeatMode = defaults.string(forKey: Self.repeatKey)
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
         visualizerEnabled = defaults.object(forKey: Self.visualizerKey) as? Bool ?? true
-        guard systemIntegration, let livePlayer = player.avPlayer else { return }
+        player.onEvent = { [weak self] event in self?.handle(event) }
+        spectrum.playbackPosition = { [weak self] in
+            guard let self, isPlaying else { return nil }
+            return player.currentTime
+        }
+        guard systemIntegration else { return }
         configureRemoteCommands()
         publishPlaybackModes()
         #if os(macOS)
@@ -186,43 +175,6 @@ final class PlayerController {
             }
         #endif
 
-        timeObserver = livePlayer.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            MainActor.assumeIsolated {
-                self?.updatePlaybackTime(time.seconds)
-            }
-        }
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            // Notification is not Sendable, so only the identity of the item
-            // that finished crosses to the main actor - which is all the
-            // `item === player.currentItem` check ever needed.
-            let finished = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
-            Task { @MainActor in
-                guard let self, let finished,
-                      let current = self.player.currentItem,
-                      ObjectIdentifier(current) == finished else { return }
-                self.trackFinished()
-            }
-        }
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            let failed = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
-            Task { @MainActor in
-                guard let self, let failed,
-                      let current = self.player.currentItem,
-                      ObjectIdentifier(current) == failed else { return }
-                self.currentTrackFailed()
-            }
-        }
         #if os(iOS)
             // Another app taking the audio session pauses the player
             NotificationCenter.default.addObserver(
@@ -243,10 +195,50 @@ final class PlayerController {
                 forName: AVAudioSession.routeChangeNotification,
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.updateAirPlayRoute() }
+            ) { [weak self] notification in
+                let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+                let deviceGone = reasonValue.flatMap(AVAudioSession.RouteChangeReason.init) == .oldDeviceUnavailable
+                MainActor.assumeIsolated {
+                    self?.updateAirPlayRoute()
+                    // Unplugged headphones must not switch to the speaker mid-song.
+                    if deviceGone, self?.isPlaying == true {
+                        self?.pausePlayback()
+                    }
+                }
             }
         #endif
+    }
+
+    private func handle(_ event: PlaybackEvent) {
+        switch event {
+        case let .loaded(duration):
+            self.duration = duration
+            consecutiveFailures = 0
+            updateNowPlayingInfo()
+        case .failed:
+            currentTrackFailed()
+        case .finished:
+            trackFinished()
+        }
+    }
+
+    /// Twice a second while playing, with slack so the system can batch the wakeups.
+    private func startTimeUpdates() {
+        guard systemIntegration, timeUpdates == nil else { return }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.updatePlaybackTime(self.player.currentTime)
+            }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        timeUpdates = timer
+    }
+
+    private func stopTimeUpdates() {
+        timeUpdates?.invalidate()
+        timeUpdates = nil
     }
 
     func handleInterruption(began: Bool, shouldResume: Bool) {
@@ -267,22 +259,26 @@ final class PlayerController {
     private func pausePlayback() {
         playbackActivation.cancel()
         player.pause()
+        stopTimeUpdates()
+        currentTime = player.currentTime
         isPlaying = false
         updateNowPlayingInfo()
         saveSession()
     }
 
     private func resumePlayback() {
-        guard let item = player.currentItem else { return }
+        guard currentTrack != nil else { return }
+        let token = loadToken
         // Reflect the requested state immediately so Pause also works while
-        // activation is pending. AVPlayer starts only after activation succeeds.
+        // activation is pending. Audio starts only after activation succeeds.
         isPlaying = true
         playbackActivation.request { [weak self] in
-            guard let self, isPlaying, item === player.currentItem else { return }
+            guard let self, isPlaying, token == loadToken else { return }
             player.play()
+            startTimeUpdates()
             updateNowPlayingInfo()
         } onFailure: { [weak self] error in
-            guard let self, item === player.currentItem else { return }
+            guard let self, token == loadToken else { return }
             pausePlayback()
             Self.logger.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -363,7 +359,7 @@ final class PlayerController {
     }
 
     func togglePlayPause() {
-        guard player.currentItem != nil else { return }
+        guard currentTrack != nil else { return }
         if isPlaying {
             pausePlayback()
         } else {
@@ -385,47 +381,22 @@ final class PlayerController {
     }
 
     func seek(to time: TimeInterval) {
-        guard let item = player.currentItem, time.isFinite else { return }
-        seekGeneration += 1
-        let generation = seekGeneration
+        guard currentTrack != nil, time.isFinite else { return }
         // Scrubbing into the last second means jump straight to the
         // end-of-track behaviour.
         if duration > 0, time >= duration - 1 {
-            // The bump above orphans any in-flight seek, and stopping at the queue end starts none.
-            isSeeking = false
             trackFinished()
             return
         }
         let target = min(max(0, time), max(duration - 0.1, 0))
-        // Freeze observer updates until the async seek lands, otherwise the
-        // slider briefly snaps back to the pre-seek position.
-        isSeeking = true
+        player.seek(to: target)
         currentTime = target
-        // Sample-exact seeks can wedge near the end of a FLAC; allow slack
-        // before the target (never after, so we can't trip the track end).
-        player.seek(
-            to: CMTime(seconds: target, preferredTimescale: 600),
-            toleranceBefore: .positiveInfinity,
-            toleranceAfter: .zero
-        ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, item === self.player.currentItem,
-                      generation == self.seekGeneration else { return }
-                self.isSeeking = false
-                // Republish once the seek lands: the tolerance means the
-                // player can settle before the target, and nothing else
-                // refreshes the lock screen until the next track change.
-                let landed = self.player.currentTime().seconds
-                self.currentTime = landed.isFinite ? landed : target
-                self.updateNowPlayingInfo()
-                self.saveSessionTime()
-            }
-        }
         updateNowPlayingInfo()
+        saveSessionTime()
     }
 
     func updatePlaybackTime(_ seconds: Double) {
-        guard !isSeeking, seconds.isFinite else { return }
+        guard seconds.isFinite else { return }
         currentTime = max(0, seconds)
         if now().timeIntervalSince(lastSessionSave) > 5 {
             saveSessionTime()
@@ -461,23 +432,9 @@ final class PlayerController {
 
     func trackFinished() {
         if repeatMode == .one {
-            guard let item = player.currentItem else { return }
-            seekGeneration += 1
-            let generation = seekGeneration
-            // The seek is async: publishing the reset before it lands leaves
-            // the lock screen stuck at the end of the track, so republish from
-            // the completion handler once the player really is back at zero.
-            isSeeking = true
+            guard currentTrack != nil else { return }
+            player.seek(to: 0)
             currentTime = 0
-            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, item === self.player.currentItem,
-                          generation == self.seekGeneration else { return }
-                    self.isSeeking = false
-                    self.currentTime = 0
-                    self.updateNowPlayingInfo()
-                }
-            }
             resumePlayback()
         } else {
             advance(by: 1)
@@ -527,58 +484,22 @@ final class PlayerController {
 
     private func startCurrentTrack(reloadMetadata: Bool = true, paused: Bool = false, startTime: TimeInterval = 0) {
         guard let track = currentTrack else { return }
-        // Without the precise-timing option AVFoundation only estimates the
-        // duration of compressed audio, so tracks outrun their slider.
-        let asset = AVURLAsset(url: track.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let item = AVPlayerItem(asset: asset)
-        statusObservation = item.observe(\.status) { [weak self] item, _ in
-            let status = item.status
-            Task { @MainActor in
-                guard let self, item === self.player.currentItem else { return }
-                switch status {
-                case .failed:
-                    self.currentTrackFailed()
-                case .readyToPlay:
-                    self.consecutiveFailures = 0
-                default:
-                    break
-                }
-            }
-        }
+        loadToken += 1
+        let token = loadToken
         playbackActivation.cancel()
-        seekGeneration += 1
-        if visualizerEnabled {
-            spectrum.reset()
-            attachSpectrum(to: item)
-        }
-        // Replacing an item on a running AVPlayer can start it immediately.
-        // Hold playback until the new request has activated the audio session.
-        player.pause()
-        player.replaceCurrentItem(with: item)
-        if paused {
-            isPlaying = false
-            if startTime > 0 {
-                player.seek(
-                    to: CMTime(seconds: startTime, preferredTimescale: 600),
-                    toleranceBefore: .positiveInfinity,
-                    toleranceAfter: .zero,
-                    completionHandler: { _ in }
-                )
-            }
-        }
-        isSeeking = false
+        spectrum.reset()
         currentTime = startTime
         duration = 0
+        // Loading leaves the transport paused; playback waits for the audio session below.
+        player.load(track.url, at: startTime)
+        if paused {
+            isPlaying = false
+            stopTimeUpdates()
+        }
         if !paused {
             resumePlayback()
         }
         saveSession()
-        Task {
-            let seconds = await durationLoader(item)
-            guard item === player.currentItem else { return }
-            duration = seconds.isFinite ? seconds : 0
-            updateNowPlayingInfo()
-        }
         guard reloadMetadata else {
             updateNowPlayingInfo()
             return
@@ -588,19 +509,14 @@ final class PlayerController {
         updateNowPlayingInfo()
         metadataTask = Task {
             let metadata = await metadataLoader(track)
-            guard item === player.currentItem else { return }
+            guard token == loadToken else { return }
             nowPlaying = metadata
             nowPlayingSource = track.url
             updateNowPlayingInfo()
-            // AirPlay receivers read metadata from the item itself, not
-            // from MPNowPlayingInfoCenter. (iOS-only API.)
-            #if os(iOS)
-                item.externalMetadata = externalMetadata(for: track)
-            #endif
             // After the metadata, so it never competes with loading the cover. The previous
             // track's value stays until then, so the line updates in place.
             let quality = await qualityLoader(track.url)
-            guard item === player.currentItem else { return }
+            guard token == loadToken else { return }
             audioQuality = quality
         }
     }
@@ -610,35 +526,6 @@ final class PlayerController {
             isAirPlaying = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
         }
     #endif
-
-    private func attachSpectrum(to item: AVPlayerItem) {
-        Task {
-            guard let track = try? await item.asset.loadTracks(withMediaType: .audio).first,
-                  visualizerEnabled, item.audioMix == nil, let tap = spectrum.buffer.makeTap() else { return }
-            let parameters = AVMutableAudioMixInputParameters(track: track)
-            parameters.audioTapProcessor = tap
-            let mix = AVMutableAudioMix()
-            mix.inputParameters = [parameters]
-            item.audioMix = mix
-        }
-    }
-
-    func externalMetadata(for track: Track) -> [AVMetadataItem] {
-        var items: [AVMetadataItem] = []
-        func add(_ identifier: AVMetadataIdentifier, _ value: (NSCopying & NSObjectProtocol)?) {
-            guard let value else { return }
-            let item = AVMutableMetadataItem()
-            item.identifier = identifier
-            item.value = value
-            item.extendedLanguageTag = "und"
-            items.append(item)
-        }
-        add(.commonIdentifierTitle, (nowPlaying.title ?? track.displayTitle) as NSString)
-        add(.commonIdentifierArtist, nowPlaying.artist as NSString?)
-        add(.commonIdentifierAlbumName, nowPlaying.album as NSString?)
-        add(.commonIdentifierArtwork, nowPlaying.artworkData as NSData?)
-        return items
-    }
 
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()

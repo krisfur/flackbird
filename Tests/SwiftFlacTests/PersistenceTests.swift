@@ -17,7 +17,7 @@ struct PersistenceTests {
         player.toggleShuffle()
         player.cycleRepeatMode()
         player.seek(to: 35)
-        transport.completeSeek()
+        #expect(transport.seeks == [35])
         try await eventually { store.defaults.double(forKey: "sessionTime") == 35 }
         let restored = testPlayer(store)
         restored.libraryRoot = newRoot
