@@ -89,8 +89,21 @@ final class FakeTransport: PlaybackTransport {
         CMTime(seconds: time, preferredTimescale: 600)
     }
 
+    var queued: [AVPlayerItem] = []
     func replaceCurrentItem(with item: AVPlayerItem?) {
         currentItem = item; time = 0
+    }
+
+    func insert(_ item: AVPlayerItem, after _: AVPlayerItem?) {
+        queued.append(item)
+    }
+
+    func advanceToNextItem() {
+        currentItem = queued.isEmpty ? nil : queued.removeFirst(); time = 0
+    }
+
+    func removeAllItems() {
+        currentItem = nil; queued = []
     }
 
     func play() {
@@ -121,7 +134,7 @@ func testPlayer(_ store: TestStore, transport: FakeTransport = FakeTransport(),
 {
     PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
                      activate: activate, metadataLoader: { TrackMetadata(title: $0.title, artist: $0.artist, album: $0.album) },
-                     durationLoader: { _ in 120 }, now: now)
+                     durationLoader: { _ in 120 }, defersPreciseTiming: false, now: now)
 }
 
 func testTracks(root: URL, count: Int = 3) -> [Track] {

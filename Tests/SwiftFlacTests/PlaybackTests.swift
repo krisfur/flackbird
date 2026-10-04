@@ -121,6 +121,49 @@ struct PlaybackTests {
         #expect(player.currentTime == 30)
     }
 
+    @Test func flacStartsEstimatedAndTheFirstSeekMovesToTheQueuedPreciseCopy() async throws {
+        let store = try TestStore()
+        let transport = FakeTransport()
+        let player = PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false, activate: {},
+                                      metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 120 })
+        let tracks = testTracks(root: store.root)
+        player.play(tracks[0], in: tracks)
+        try await eventually { player.duration == 120 && transport.plays == 1 }
+        let estimated = transport.currentItem
+        try #require(transport.queued.count == 1)
+        let precise = transport.queued[0]
+        // Restarting is exact on any timeline, so it stays on the estimated item.
+        player.seek(to: 0)
+        try #require(transport.seeks.count == 1)
+        transport.completeSeek()
+        #expect(transport.currentItem === estimated)
+        player.seek(to: 40)
+        #expect(transport.currentItem === precise && transport.queued.isEmpty)
+        try #require(transport.seeks.map(\.0) == [40])
+        player.updatePlaybackTime(0)
+        #expect(player.currentTime == 40 && player.isPlaying)
+        transport.completeSeek()
+        try await eventually { player.currentTime == 40 }
+        player.seek(to: 60)
+        #expect(transport.currentItem === precise)
+        try #require(transport.seeks.map(\.0) == [60])
+        transport.completeSeek()
+        // A new track drops the old copy and queues its own.
+        player.next()
+        #expect(transport.queued.count == 1 && transport.queued[0] !== precise)
+        try await eventually { player.duration == 120 }
+        // A restored session opens precisely, since it seeks straight away.
+        let restoredTransport = FakeTransport()
+        let restored = PlayerController(transport: restoredTransport, defaults: store.defaults, systemIntegration: false,
+                                        activate: {}, metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 120 })
+        player.seek(to: 30)
+        try #require(transport.seeks.count == 1)
+        transport.completeSeek()
+        try await eventually { store.defaults.double(forKey: "sessionTime") == 30 }
+        restored.restoreSession(from: tracks)
+        #expect(restoredTransport.queued.isEmpty && restoredTransport.seeks.map(\.0) == [30] && !restored.isPlaying)
+    }
+
     @Test(arguments: [false, true]) func failedQueueTerminatesEvenWithRepeat(repeatOne: Bool) throws {
         let store = try TestStore()
         let player = testPlayer(store)
@@ -143,14 +186,15 @@ struct PlaybackTests {
     @Test func unplayableFilesSkipAheadThenStop() async throws {
         let store = try TestStore()
         let tracks = try (1 ... 3).map { try Track(url: store.file("\($0).flac", data: Data("not audio".utf8))) }
-        let transport = AVPlayer()
+        let transport = AVQueuePlayer()
         transport.isMuted = true
         let player = PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
-                                      activate: {}, metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 0 })
+                                      activate: {}, metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 0 }, defersPreciseTiming: false)
         player.play(tracks[0], in: tracks)
         try await eventually { !player.isPlaying }
         #expect(player.currentTrack == tracks[2])
-        #expect(transport.currentItem?.status == .failed)
+        // The queue player drops a failed item, so it may already be gone.
+        #expect(transport.currentItem.map { $0.status == .failed } ?? true)
     }
 
     @Test func interruptionsRespectResumePermissionAndPriorState() throws {

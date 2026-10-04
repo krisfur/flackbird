@@ -82,6 +82,13 @@ final class PlayerController {
     private let metadataLoader: @Sendable (Track) async -> TrackMetadata
     private let qualityLoader: @Sendable (URL) async -> AudioQuality?
     private let durationLoader: @MainActor (AVPlayerItem) async -> Double
+    private let defersPreciseTiming: Bool
+    /// The current FLAC track's precise copy, queued behind its estimated item so the
+    /// player prepares it in the background; the first seek moves to it.
+    private var queuedPreciseItem: AVPlayerItem?
+    /// The item this track plays from. The queue player drops failed items, so
+    /// `currentItem` can already be nil when their failure is reported.
+    private var activeItem: AVPlayerItem?
     private let playbackActivation: PlaybackActivation
     private let now: () -> Date
     private var seekGeneration = 0
@@ -146,14 +153,21 @@ final class PlayerController {
         durationLoader: @escaping @MainActor (AVPlayerItem) async -> Double = {
             await (try? $0.asset.load(.duration))?.seconds ?? 0
         },
+        defersPreciseTiming: Bool = true,
         now: @escaping () -> Date = Date.init
     ) {
-        player = transport ?? AVPlayer()
+        player = transport ?? {
+            let queue = AVQueuePlayer()
+            // The queue only holds a precise copy of the current track, never the next one.
+            queue.actionAtItemEnd = .pause
+            return queue
+        }()
         self.defaults = defaults
         self.systemIntegration = systemIntegration
         self.metadataLoader = metadataLoader
         self.qualityLoader = qualityLoader
         self.durationLoader = durationLoader
+        self.defersPreciseTiming = defersPreciseTiming
         self.now = now
         playbackActivation = PlaybackActivation(activate: activate)
         isShuffling = defaults.bool(forKey: Self.shuffleKey)
@@ -201,11 +215,11 @@ final class PlayerController {
         ) { [weak self] notification in
             // Notification is not Sendable, so only the identity of the item
             // that finished crosses to the main actor - which is all the
-            // `item === player.currentItem` check ever needed.
+            // `item === activeItem` check ever needed.
             let finished = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
             Task { @MainActor in
                 guard let self, let finished,
-                      let current = self.player.currentItem,
+                      let current = self.activeItem,
                       ObjectIdentifier(current) == finished else { return }
                 self.trackFinished()
             }
@@ -218,7 +232,7 @@ final class PlayerController {
             let failed = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
             Task { @MainActor in
                 guard let self, let failed,
-                      let current = self.player.currentItem,
+                      let current = self.activeItem,
                       ObjectIdentifier(current) == failed else { return }
                 self.currentTrackFailed()
             }
@@ -385,7 +399,7 @@ final class PlayerController {
     }
 
     func seek(to time: TimeInterval) {
-        guard let item = player.currentItem, time.isFinite else { return }
+        guard let current = player.currentItem, time.isFinite else { return }
         seekGeneration += 1
         let generation = seekGeneration
         // Scrubbing into the last second means jump straight to the
@@ -401,6 +415,7 @@ final class PlayerController {
         // slider briefly snaps back to the pre-seek position.
         isSeeking = true
         currentTime = target
+        let item = target > 0 ? switchToPreciseItem() ?? current : current
         // Sample-exact seeks can wedge near the end of a FLAC; allow slack
         // before the target (never after, so we can't trip the track end).
         player.seek(
@@ -422,6 +437,31 @@ final class PlayerController {
             }
         }
         updateNowPlayingInfo()
+    }
+
+    /// iOS seeks an estimated FLAC timeline to the wrong place. The queued precise copy keeps
+    /// playing or paused as before, and a seek interrupts the audio anyway.
+    private func switchToPreciseItem() -> AVPlayerItem? {
+        guard let item = queuedPreciseItem, let track = currentTrack else { return nil }
+        queuedPreciseItem = nil
+        player.advanceToNextItem()
+        guard item === player.currentItem else { return nil }
+        observeStatus(of: item)
+        if visualizerEnabled {
+            attachSpectrum(to: item)
+        } else {
+            item.audioMix = nil
+        }
+        #if os(iOS)
+            item.externalMetadata = externalMetadata(for: track)
+        #endif
+        Task {
+            let seconds = await durationLoader(item)
+            guard item === player.currentItem, seconds.isFinite, seconds > 0 else { return }
+            duration = seconds
+            updateNowPlayingInfo()
+        }
+        return item
     }
 
     func updatePlaybackTime(_ seconds: Double) {
@@ -527,24 +567,15 @@ final class PlayerController {
 
     private func startCurrentTrack(reloadMetadata: Bool = true, paused: Bool = false, startTime: TimeInterval = 0) {
         guard let track = currentTrack else { return }
-        // Without the precise-timing option AVFoundation only estimates the
-        // duration of compressed audio, so tracks outrun their slider.
-        let asset = AVURLAsset(url: track.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let item = AVPlayerItem(asset: asset)
-        statusObservation = item.observe(\.status) { [weak self] item, _ in
-            let status = item.status
-            Task { @MainActor in
-                guard let self, item === self.player.currentItem else { return }
-                switch status {
-                case .failed:
-                    self.currentTrackFailed()
-                case .readyToPlay:
-                    self.consecutiveFailures = 0
-                default:
-                    break
-                }
-            }
+        // Without the precise-timing option AVFoundation only estimates the duration of compressed
+        // audio, so tracks outrun their slider. On iOS the option scans the whole file before
+        // playback (seconds for hi-res), so FLAC starts estimated and queues a precise copy.
+        let estimated = defersPreciseTiming && startTime == 0 && track.url.pathExtension.lowercased() == "flac"
+        func makeItem(precise: Bool) -> AVPlayerItem {
+            AVPlayerItem(asset: AVURLAsset(url: track.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: precise]))
         }
+        let item = makeItem(precise: !estimated)
+        observeStatus(of: item)
         playbackActivation.cancel()
         seekGeneration += 1
         if visualizerEnabled {
@@ -554,7 +585,15 @@ final class PlayerController {
         // Replacing an item on a running AVPlayer can start it immediately.
         // Hold playback until the new request has activated the audio session.
         player.pause()
+        player.removeAllItems()
         player.replaceCurrentItem(with: item)
+        queuedPreciseItem = estimated ? makeItem(precise: true) : nil
+        if let queuedPreciseItem {
+            if visualizerEnabled {
+                attachSpectrum(to: queuedPreciseItem)
+            }
+            player.insert(queuedPreciseItem, after: item)
+        }
         if paused {
             isPlaying = false
             if startTime > 0 {
@@ -610,6 +649,24 @@ final class PlayerController {
             isAirPlaying = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
         }
     #endif
+
+    private func observeStatus(of item: AVPlayerItem) {
+        activeItem = item
+        statusObservation = item.observe(\.status) { [weak self] item, _ in
+            let status = item.status
+            Task { @MainActor in
+                guard let self, item === self.activeItem else { return }
+                switch status {
+                case .failed:
+                    self.currentTrackFailed()
+                case .readyToPlay:
+                    self.consecutiveFailures = 0
+                default:
+                    break
+                }
+            }
+        }
+    }
 
     private func attachSpectrum(to item: AVPlayerItem) {
         Task {
