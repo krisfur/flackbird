@@ -16,9 +16,7 @@ struct PlaybackTests {
         player.updatePlaybackTime(4)
         player.previous()
         #expect(player.currentTrack == tracks[1])
-        #expect(transport.seeks.last?.0 == 0)
-        transport.completeSeek()
-        try await eventually { player.currentTime == 0 }
+        #expect(transport.seeks.last == 0 && player.currentTime == 0)
         player.previous()
         #expect(player.currentTrack == tracks[0])
         player.previous()
@@ -44,8 +42,7 @@ struct PlaybackTests {
         player.cycleRepeatMode()
         player.trackFinished()
         #expect(player.currentTrack == tracks[2] && player.isPlaying)
-        #expect(transport.seeks.last?.0 == 0)
-        transport.completeSeek()
+        #expect(transport.seeks.last == 0)
         player.toggleShuffle()
         #expect(player.currentTrack == tracks[2])
         #expect(Set(player.queue) == Set(tracks))
@@ -78,7 +75,7 @@ struct PlaybackTests {
         #expect(RepeatMode(mode.remoteType) == mode)
     }
 
-    @Test func seekClampsAndIgnoresObsoleteCompletions() async throws {
+    @Test func seekClampsAndScrubbingIntoTheLastSecondAdvances() async throws {
         let store = try TestStore()
         let transport = FakeTransport()
         let player = testPlayer(store, transport: transport)
@@ -88,22 +85,22 @@ struct PlaybackTests {
         player.seek(to: -.infinity)
         #expect(transport.seeks.isEmpty)
         player.seek(to: -5)
-        #expect(transport.seeks.last?.0 == 0)
+        #expect(transport.seeks.last == 0)
         player.seek(to: 40)
-        transport.completeSeek(at: 1)
-        try await eventually { player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 40 }
-        transport.completeSeek()
+        #expect(player.currentTime == 40)
+        #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 40)
+        #expect(store.defaults.double(forKey: "sessionTime") == 40)
         player.next()
         try await eventually { player.duration == 120 }
         player.updatePlaybackTime(12)
         #expect(player.currentTime == 12)
         player.seek(to: 119)
         #expect(player.currentTrack == tracks[2])
+        #expect(transport.loads.map(\.url) == [tracks[0].url, tracks[1].url, tracks[2].url])
         player.seek(to: 20)
         player.play(tracks[0], in: tracks)
-        transport.completeSeek()
         try await eventually { player.displayTitle == "Song 1" }
-        #expect(player.currentTime == 0)
+        #expect(player.currentTime == 0 && transport.loads.last?.time == 0)
     }
 
     @Test func scrubToEndOfLastTrackKeepsTimeUpdating() async throws {
@@ -115,7 +112,6 @@ struct PlaybackTests {
         try await eventually { player.duration == 120 }
         player.seek(to: 50)
         player.seek(to: 119.5)
-        transport.completeSeek()
         #expect(!player.isPlaying && player.currentTrack == tracks[2])
         player.updatePlaybackTime(30)
         #expect(player.currentTime == 30)
@@ -143,14 +139,11 @@ struct PlaybackTests {
     @Test func unplayableFilesSkipAheadThenStop() async throws {
         let store = try TestStore()
         let tracks = try (1 ... 3).map { try Track(url: store.file("\($0).flac", data: Data("not audio".utf8))) }
-        let transport = AVPlayer()
-        transport.isMuted = true
-        let player = PlayerController(transport: transport, defaults: store.defaults, systemIntegration: false,
-                                      activate: {}, metadataLoader: { _ in TrackMetadata() }, durationLoader: { _ in 0 })
+        let player = PlayerController(transport: AudioEngineTransport(), defaults: store.defaults, systemIntegration: false,
+                                      activate: {}, metadataLoader: { _ in TrackMetadata() })
         player.play(tracks[0], in: tracks)
         try await eventually { !player.isPlaying }
         #expect(player.currentTrack == tracks[2])
-        #expect(transport.currentItem?.status == .failed)
     }
 
     @Test func interruptionsRespectResumePermissionAndPriorState() throws {
@@ -181,7 +174,7 @@ struct PlaybackTests {
                                               return await gate.wait()
                                           }
                                           return TrackMetadata(title: "Current", artist: "Artist", album: "Album")
-                                      }, durationLoader: { _ in 120 })
+                                      })
         player.play(tracks[0], in: tracks)
         await gate.waitUntilEntered()
         #expect(player.nowPlayingSource == nil)
@@ -196,8 +189,5 @@ struct PlaybackTests {
         player.togglePlayPause()
         #expect(player.nowPlayingInfo?[MPMediaItemPropertyTitle] as? String == "Current")
         #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 0)
-        let metadata = player.externalMetadata(for: tracks[1])
-        #expect(try await metadata.first { $0.identifier == .commonIdentifierTitle }?.load(.stringValue) == "Current")
-        #expect(try await metadata.first { $0.identifier == .commonIdentifierAlbumName }?.load(.stringValue) == "Album")
     }
 }

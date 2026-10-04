@@ -1,3 +1,4 @@
+import AVFAudio
 import Foundation
 @testable import SwiftFlac
 import Testing
@@ -44,7 +45,17 @@ struct SpectrumTests {
         #expect(buffer.latest(4) == nil)
         buffer.append([1, 2, 3, 4], sampleRate: 10)
         #expect(try #require(buffer.latest(4)).sequence == sequence + 4)
-        #expect(buffer.makeTap() != nil)
+        // The engine's tap hands over deinterleaved buffers; only the first channel is kept.
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 20, channels: 2))
+        let pcm = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4))
+        pcm.frameLength = 4
+        for index in 0 ..< 4 {
+            pcm.floatChannelData?[0][index] = Float(index + 5)
+            pcm.floatChannelData?[1][index] = -1
+        }
+        buffer.write(pcm)
+        let written = try #require(buffer.latest(4))
+        #expect(written.samples == [5, 6, 7, 8] && written.sampleRate == 20)
     }
 
     @Test @MainActor func monitorShowsFreshAudioDropsOnGapsAndHidesOnlyAfterLongSilence() {

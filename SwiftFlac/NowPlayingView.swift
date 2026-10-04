@@ -350,7 +350,7 @@ struct NowPlayingView: View {
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 540)
         .overlay(alignment: .topTrailing) {
-            AirPlayButton(player: player.routePickerPlayer)
+            AirPlayButton()
                 .frame(width: 24, height: 24)
                 .padding(12)
         }
@@ -359,7 +359,7 @@ struct NowPlayingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                AirPlayButton(player: player.routePickerPlayer)
+                AirPlayButton()
                     .frame(width: 28, height: 28)
             }
         }
@@ -507,8 +507,6 @@ private func formatted(_ time: TimeInterval) -> String {
 
 #if os(iOS)
     struct AirPlayButton: UIViewRepresentable {
-        let player: AVPlayer?
-
         func makeUIView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
             picker.backgroundColor = .clear
@@ -521,11 +519,8 @@ private func formatted(_ time: TimeInterval) -> String {
     }
 #else
     struct AirPlayButton: NSViewRepresentable {
-        let player: AVPlayer?
-
         func makeNSView(context _: Context) -> AVRoutePickerView {
             let picker = AVRoutePickerView()
-            picker.player = player
             picker.isRoutePickerButtonBordered = false
             return picker
         }

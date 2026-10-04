@@ -1,10 +1,8 @@
 import Accelerate
 import AVFoundation
-import MediaToolbox
 import os
 
-/// Recent decoded audio, shared between a real-time audio tap and the UI. The
-/// tap side never allocates, retains, or blocks: it skips a buffer if the UI holds the lock.
+/// Recent decoded audio, shared between the engine's tap and the UI.
 final class SpectrumBuffer: @unchecked Sendable {
     /// Room for the analysis window plus Bluetooth-sized output latency.
     static let capacity = 32768
@@ -14,9 +12,6 @@ final class SpectrumBuffer: @unchecked Sendable {
         var written = 0
         var sequence: UInt64 = 0
         var sampleRate: Double = 0
-        var channels = 0
-        var isUsable = false
-        var isInterleaved = false
     }
 
     private let samples = UnsafeMutablePointer<Float>.allocate(capacity: capacity)
@@ -55,63 +50,20 @@ final class SpectrumBuffer: @unchecked Sendable {
         state.pointee.written = 0
     }
 
-    /// A tap to put on an audio mix; each tap keeps this buffer alive until it is finalized.
-    func makeTap() -> MTAudioProcessingTap? {
-        let owner = Unmanaged.passRetained(self)
-        var callbacks = MTAudioProcessingTapCallbacks(
-            version: kMTAudioProcessingTapCallbacksVersion_0,
-            clientInfo: owner.toOpaque(),
-            init: { _, clientInfo, storage in storage.pointee = clientInfo },
-            finalize: { tap in Unmanaged<SpectrumBuffer>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).release() },
-            prepare: { tap, _, format in
-                Unmanaged<SpectrumBuffer>.fromOpaque(MTAudioProcessingTapGetStorage(tap))
-                    ._withUnsafeGuaranteedRef { $0.prepare(format.pointee) }
-            },
-            unprepare: nil,
-            process: { tap, frames, _, bufferList, framesOut, flagsOut in
-                guard MTAudioProcessingTapGetSourceAudio(tap, frames, bufferList, flagsOut, nil, framesOut) == noErr else { return }
-                Unmanaged<SpectrumBuffer>.fromOpaque(MTAudioProcessingTapGetStorage(tap))
-                    ._withUnsafeGuaranteedRef { $0.write(bufferList, frames: framesOut.pointee) }
-            }
-        )
-        var tap: MTAudioProcessingTap?
-        guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr
-        else {
-            // Init and finalize never ran, so the retain is ours to drop.
-            owner.release()
-            return nil
-        }
-        return tap
-    }
-
-    private func prepare(_ format: AudioStreamBasicDescription) {
+    /// From the engine's tap, off the audio thread: the first channel is enough for a display.
+    func write(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
         os_unfair_lock_lock(lock)
         defer { os_unfair_lock_unlock(lock) }
-        state.pointee.sampleRate = format.mSampleRate
-        state.pointee.channels = Int(format.mChannelsPerFrame)
-        state.pointee.isUsable = format.mFormatID == kAudioFormatLinearPCM
-            && format.mFormatFlags & kAudioFormatFlagIsFloat != 0 && format.mBitsPerChannel == 32
-        state.pointee.isInterleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
-    }
-
-    /// Real-time thread: the first channel is enough for a display.
-    private func write(_ list: UnsafeMutablePointer<AudioBufferList>, frames: CMItemCount) {
-        guard os_unfair_lock_trylock(lock) else { return }
-        defer { os_unfair_lock_unlock(lock) }
-        let current = state.pointee
-        let buffers = UnsafeMutableAudioBufferListPointer(list)
-        guard current.isUsable, current.channels > 0, let first = buffers.first,
-              let data = first.mData?.assumingMemoryBound(to: Float.self) else { return }
-        let stride = current.isInterleaved ? current.channels : 1
-        let available = Int(first.mDataByteSize) / MemoryLayout<Float>.size / stride
-        appendLocked(data, count: min(Int(frames), available), stride: stride)
+        state.pointee.sampleRate = buffer.format.sampleRate
+        appendLocked(data[0], count: Int(buffer.frameLength))
     }
 
     /// Caller holds the lock.
-    private func appendLocked(_ data: UnsafePointer<Float>, count: Int, stride: Int) {
+    private func appendLocked(_ data: UnsafePointer<Float>, count: Int) {
         var index = state.pointee.writeIndex
         for frame in 0 ..< count {
-            samples[index] = data[frame * stride]
+            samples[index] = data[frame]
             index = (index + 1) % Self.capacity
         }
         state.pointee.writeIndex = index
@@ -126,7 +78,7 @@ final class SpectrumBuffer: @unchecked Sendable {
         state.pointee.sampleRate = sampleRate
         mono.withUnsafeBufferPointer { pointer in
             guard let base = pointer.baseAddress else { return }
-            appendLocked(base, count: pointer.count, stride: 1)
+            appendLocked(base, count: pointer.count)
         }
     }
 }
