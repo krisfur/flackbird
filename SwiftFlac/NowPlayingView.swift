@@ -339,12 +339,8 @@ struct NowPlayingView: View {
             artwork = artworkImage(from: player.nowPlaying.artworkData)
         }
         #if os(macOS)
+        // No AirPlay button: macOS's picker routes an AVPlayer, and the system Sound menu routes ours.
         .frame(minWidth: 420, minHeight: 540)
-        .overlay(alignment: .topTrailing) {
-            AirPlayButton()
-                .frame(width: 24, height: 24)
-                .padding(12)
-        }
         #endif
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -507,16 +503,6 @@ private func formatted(_ time: TimeInterval) -> String {
         }
 
         func updateUIView(_: AVRoutePickerView, context _: Context) {}
-    }
-#else
-    struct AirPlayButton: NSViewRepresentable {
-        func makeNSView(context _: Context) -> AVRoutePickerView {
-            let picker = AVRoutePickerView()
-            picker.isRoutePickerButtonBordered = false
-            return picker
-        }
-
-        func updateNSView(_: AVRoutePickerView, context _: Context) {}
     }
 #endif
 
