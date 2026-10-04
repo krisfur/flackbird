@@ -1,4 +1,5 @@
-import AVFAudio
+import Accelerate
+import AVFoundation
 
 enum PlaybackEvent: Equatable {
     case loaded(duration: TimeInterval)
@@ -22,44 +23,46 @@ protocol PlaybackTransport: AnyObject {
     func seek(to time: TimeInterval)
 }
 
-/// Decodes on its own queue and plays through AVAudioEngine.
+/// Feeds our decoders' PCM to AVSampleBufferAudioRenderer, which gives AirPlay 2 its long-form
+/// buffering. The synchronizer's clock is the position being heard.
 @MainActor
-final class AudioEngineTransport: PlaybackTransport {
+final class AudioRendererTransport: PlaybackTransport {
     var onEvent: ((PlaybackEvent) -> Void)?
     var spectrum: SpectrumBuffer? {
-        didSet { installTap() }
+        didSet { feeder.setSpectrum(spectrum) }
     }
 
-    private let engine = AVAudioEngine()
-    private let node = AVAudioPlayerNode()
-    private lazy var feeder = Feeder(node: node) { [weak self] event in
+    private let renderer = AVSampleBufferAudioRenderer()
+    private let synchronizer = AVSampleBufferRenderSynchronizer()
+    private lazy var feeder = Feeder(renderer: renderer) { [weak self] event in
         Task { @MainActor in self?.handle(event) }
     }
+
     private var generation = 0
-    private var connectedFormat: AVAudioFormat?
     private var sampleRate: Double = 0
     private var length: AVAudioFramePosition = 0
-    /// The track frame the node's timeline starts from.
-    private var startFrame: AVAudioFramePosition = 0
-    /// Reported while the node isn't playing: paused, loading, or seeking.
+    /// Reported until the renderer has audio for the current position.
     private var heldTime: TimeInterval = 0
     private var isLoaded = false
     private var isPrimed = false
     private var wantsPlayback = false
+    private var endObserver: Any?
 
     init() {
-        engine.attach(node)
+        synchronizer.addRenderer(renderer)
+        // Route changes can make the renderer drop what it holds; carry on from where it stopped.
         NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.restartAfterConfigurationChange() }
+            forName: .AVSampleBufferAudioRendererWasFlushedAutomatically, object: renderer, queue: .main
+        ) { [weak self] notification in
+            let flushTime = (notification.userInfo?[AVSampleBufferAudioRendererFlushTimeKey] as? NSValue)?.timeValue
+            MainActor.assumeIsolated { self?.refill(from: flushTime) }
         }
     }
 
     /// Lets tests play without sound.
     var outputVolume: Float {
-        get { engine.mainMixerNode.outputVolume }
-        set { engine.mainMixerNode.outputVolume = newValue }
+        get { renderer.volume }
+        set { renderer.volume = newValue }
     }
 
     private var duration: TimeInterval {
@@ -67,9 +70,9 @@ final class AudioEngineTransport: PlaybackTransport {
     }
 
     var currentTime: TimeInterval {
-        guard isPrimed, let renderTime = node.lastRenderTime,
-              let playerTime = node.playerTime(forNodeTime: renderTime) else { return heldTime }
-        return min(max(0, Double(startFrame + playerTime.sampleTime) / sampleRate), duration)
+        guard isPrimed else { return heldTime }
+        let time = synchronizer.currentTime().seconds
+        return time.isFinite ? min(max(0, time), duration) : heldTime
     }
 
     func load(_ url: URL, at time: TimeInterval) {
@@ -77,148 +80,142 @@ final class AudioEngineTransport: PlaybackTransport {
         isLoaded = false
         isPrimed = false
         heldTime = max(0, time)
+        removeEndObserver()
+        synchronizer.rate = 0
         feeder.open(url, generation: generation)
     }
 
     func play() {
         wantsPlayback = true
-        guard isLoaded else { return }
-        beginPlayback()
+        guard isPrimed else { return }
+        synchronizer.setRate(1, time: synchronizer.currentTime())
     }
 
     func pause() {
         heldTime = currentTime
         wantsPlayback = false
-        isPrimed = false
-        generation += 1
-        feeder.stop(generation: generation)
-        // Releases the audio hardware, as AVPlayer does when paused.
-        engine.pause()
+        synchronizer.rate = 0
     }
 
     func seek(to time: TimeInterval) {
         heldTime = min(max(0, time), duration)
-        guard wantsPlayback, isLoaded else { return }
-        beginPlayback()
+        guard isLoaded else { return }
+        restart()
     }
 
-    /// Pause, seek and route changes all restart from `heldTime`: decoding a fresh
-    /// start is a few milliseconds and keeps one path to get right.
-    private func beginPlayback() {
-        do {
-            if !engine.isRunning {
-                try engine.start()
-            }
-        } catch {
-            wantsPlayback = false
-            onEvent?(.failed)
-            return
-        }
+    /// Flushes and feeds from `heldTime`; the clock starts once the renderer has audio.
+    private func restart() {
         generation += 1
         isPrimed = false
-        startFrame = min(AVAudioFramePosition(heldTime * sampleRate), length)
-        feeder.start(at: startFrame, generation: generation)
+        removeEndObserver()
+        synchronizer.setRate(0, time: CMTime(seconds: heldTime, preferredTimescale: CMTimeScale(sampleRate)))
+        feeder.start(at: min(AVAudioFramePosition(heldTime * sampleRate), length), generation: generation)
+    }
+
+    private func refill(from time: CMTime?) {
+        guard isLoaded else { return }
+        heldTime = time.map(\.seconds).flatMap { $0.isFinite ? $0 : nil } ?? currentTime
+        restart()
     }
 
     private func handle(_ event: Feeder.Event) {
         switch event {
-        case let .opened(generation, format, length):
+        case let .opened(generation, sampleRate, length):
             guard generation == self.generation else { return }
-            connect(format)
-            sampleRate = format.sampleRate
+            self.sampleRate = sampleRate
             self.length = length
             isLoaded = true
             heldTime = min(heldTime, duration)
             onEvent?(.loaded(duration: duration))
-            if wantsPlayback {
-                beginPlayback()
-            }
+            // Feeding while paused makes Play instant.
+            restart()
         case let .primed(generation):
-            guard generation == self.generation, wantsPlayback else { return }
-            node.play()
-            isPrimed = true
-        case let .finished(generation):
             guard generation == self.generation else { return }
-            heldTime = duration
-            isPrimed = false
-            onEvent?(.finished)
+            isPrimed = true
+            observeEnd(generation: generation)
+            let start = CMTime(seconds: heldTime, preferredTimescale: CMTimeScale(sampleRate))
+            synchronizer.setRate(wantsPlayback ? 1 : 0, time: start)
         case let .failed(generation):
             guard generation == self.generation else { return }
             isPrimed = false
+            synchronizer.rate = 0
             onEvent?(.failed)
         }
     }
 
-    private func connect(_ format: AVAudioFormat) {
-        guard format != connectedFormat else { return }
-        node.removeTap(onBus: 0)
-        engine.connect(node, to: engine.mainMixerNode, format: format)
-        connectedFormat = format
-        installTap()
+    private func observeEnd(generation: Int) {
+        let end = NSValue(time: CMTime(value: length, timescale: CMTimeScale(sampleRate)))
+        endObserver = synchronizer.addBoundaryTimeObserver(forTimes: [end], queue: .main) { [weak self] in
+            MainActor.assumeIsolated { self?.finish(generation: generation) }
+        }
     }
 
-    private func installTap() {
-        node.removeTap(onBus: 0)
-        guard let spectrum, connectedFormat != nil else { return }
-        node.installTap(onBus: 0, bufferSize: 4096, format: nil, block: Self.tap(writingTo: spectrum))
+    private func removeEndObserver() {
+        if let endObserver {
+            synchronizer.removeTimeObserver(endObserver)
+        }
+        endObserver = nil
     }
 
-    /// Taps run on the engine's own thread, so the block must not inherit main-actor isolation.
-    private nonisolated static func tap(writingTo spectrum: SpectrumBuffer) -> AVAudioNodeTapBlock {
-        { buffer, _ in spectrum.write(buffer) }
-    }
-
-    /// A route or hardware format change stops the engine; carry on from the same place.
-    private func restartAfterConfigurationChange() {
-        guard wantsPlayback, isLoaded else { return }
-        heldTime = currentTime
+    private func finish(generation: Int) {
+        guard generation == self.generation else { return }
+        heldTime = duration
         isPrimed = false
-        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
-        beginPlayback()
+        synchronizer.rate = 0
+        onEvent?(.finished)
     }
 }
 
-/// Keeps about two seconds of decoded audio scheduled on the node. All state lives on `queue`;
-/// commands carry the generation they belong to, and stale callbacks are dropped.
+/// Decodes on its own queue whenever the renderer wants more. All state lives on `queue`;
+/// commands carry the generation they belong to, and stale ones are dropped.
 private final class Feeder: @unchecked Sendable {
-    enum Event: @unchecked Sendable {
-        case opened(generation: Int, format: AVAudioFormat, length: AVAudioFramePosition)
+    enum Event: Sendable {
+        case opened(generation: Int, sampleRate: Double, length: AVAudioFramePosition)
         case primed(generation: Int)
-        case finished(generation: Int)
         case failed(generation: Int)
     }
 
-    /// Unchecked: a buffer is only touched on `queue` or by the node while it holds it.
-    private struct PooledBuffer: @unchecked Sendable {
-        let buffer: AVAudioPCMBuffer
-    }
-
-    private static let buffersAhead = 4
     private static let secondsPerBuffer = 0.5
 
     private let queue = DispatchQueue(label: "com.kfurman.SwiftFlac.decoder", qos: .userInitiated)
-    private let node: AVAudioPlayerNode
+    private let renderer: AVSampleBufferAudioRenderer
     private let send: @Sendable (Event) -> Void
     private var decoder: (any AudioDecoder)?
+    private var scratch: AVAudioPCMBuffer?
+    private var formatDescription: CMAudioFormatDescription?
+    private var spectrum: SpectrumBuffer?
     private var generation = 0
-    private var outstanding = 0
+    private var nextFrame: AVAudioFramePosition = 0
     private var reachedEnd = false
-    private var pool: [AVAudioPCMBuffer] = []
 
-    init(node: AVAudioPlayerNode, send: @escaping @Sendable (Event) -> Void) {
-        self.node = node
+    init(renderer: AVSampleBufferAudioRenderer, send: @escaping @Sendable (Event) -> Void) {
+        self.renderer = renderer
         self.send = send
+    }
+
+    func setSpectrum(_ spectrum: SpectrumBuffer?) {
+        queue.async { [self] in self.spectrum = spectrum }
     }
 
     func open(_ url: URL, generation: Int) {
         queue.async { [self] in
-            reset(generation)
+            stopFeeding(generation)
             decoder = nil
-            pool.removeAll()
             do {
                 let decoder = try makeAudioDecoder(for: url)
+                let format = decoder.processingFormat
+                // The renderer takes interleaved PCM.
+                let interleaved = format.channelLayout.map {
+                    AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, interleaved: true, channelLayout: $0)
+                } ?? AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
+                                   channels: format.channelCount, interleaved: true)
+                guard let interleaved,
+                      let scratch = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate * Self.secondsPerBuffer))
+                else { throw AudioDecoderError.unreadable }
                 self.decoder = decoder
-                send(.opened(generation: generation, format: decoder.processingFormat, length: decoder.length))
+                self.scratch = scratch
+                formatDescription = interleaved.formatDescription
+                send(.opened(generation: generation, sampleRate: format.sampleRate, length: decoder.length))
             } catch {
                 send(.failed(generation: generation))
             }
@@ -227,7 +224,7 @@ private final class Feeder: @unchecked Sendable {
 
     func start(at frame: AVAudioFramePosition, generation: Int) {
         queue.async { [self] in
-            reset(generation)
+            stopFeeding(generation)
             guard let decoder else { return }
             do {
                 try decoder.seek(to: frame)
@@ -235,59 +232,86 @@ private final class Feeder: @unchecked Sendable {
                 send(.failed(generation: generation))
                 return
             }
-            fill()
+            nextFrame = frame
+            reachedEnd = false
+            spectrum?.reset()
+            guard feed() else { return }
             send(.primed(generation: generation))
+            if !reachedEnd {
+                renderer.requestMediaDataWhenReady(on: queue) { [weak self] in
+                    guard let self, generation == self.generation else { return }
+                    _ = feed()
+                }
+            }
         }
     }
 
-    func stop(generation: Int) {
-        queue.async { [self] in reset(generation) }
-    }
-
-    private func reset(_ generation: Int) {
+    private func stopFeeding(_ generation: Int) {
         self.generation = generation
-        // Stopping fires the completions of everything scheduled; they see the new generation.
-        node.stop()
-        outstanding = 0
-        reachedEnd = false
+        renderer.stopRequestingMediaData()
+        renderer.flush()
     }
 
-    private func fill() {
-        guard let decoder else { return }
-        let format = decoder.processingFormat
-        let capacity = AVAudioFrameCount(format.sampleRate * Self.secondsPerBuffer)
-        while outstanding < Self.buffersAhead, !reachedEnd {
-            guard let buffer = pool.popLast() ?? AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return }
+    /// Enqueues until the renderer is full or the track ends; false after a failure.
+    private func feed() -> Bool {
+        guard let decoder, let scratch, let formatDescription else { return false }
+        while renderer.isReadyForMoreMediaData, !reachedEnd {
             do {
-                try decoder.read(into: buffer)
+                try decoder.read(into: scratch)
             } catch {
+                renderer.stopRequestingMediaData()
                 send(.failed(generation: generation))
-                return
+                return false
             }
-            guard buffer.frameLength > 0 else {
+            guard scratch.frameLength > 0 else {
                 reachedEnd = true
-                pool.append(buffer)
+                renderer.stopRequestingMediaData()
                 break
             }
-            outstanding += 1
-            let generation = generation
-            let pooled = PooledBuffer(buffer: buffer)
-            node.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
-                guard let self else { return }
-                queue.async { self.consumed(pooled.buffer, generation: generation) }
+            guard let sample = Self.sampleBuffer(from: scratch, at: nextFrame, description: formatDescription) else {
+                send(.failed(generation: generation))
+                return false
             }
+            spectrum?.write(scratch, at: nextFrame)
+            renderer.enqueue(sample)
+            nextFrame += AVAudioFramePosition(scratch.frameLength)
         }
-        if reachedEnd, outstanding == 0 {
-            send(.finished(generation: generation))
+        if renderer.status == .failed {
+            send(.failed(generation: generation))
+            return false
         }
+        return true
     }
 
-    private func consumed(_ buffer: AVAudioPCMBuffer, generation: Int) {
-        if buffer.format == decoder?.processingFormat {
-            pool.append(buffer)
+    /// Interleaves into a new block buffer stamped with the frame's presentation time.
+    private static func sampleBuffer(
+        from pcm: AVAudioPCMBuffer, at frame: AVAudioFramePosition, description: CMAudioFormatDescription
+    ) -> CMSampleBuffer? {
+        let frames = Int(pcm.frameLength)
+        let channels = Int(pcm.format.channelCount)
+        let bytes = frames * channels * MemoryLayout<Float>.size
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: bytes, blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil, offsetToData: 0, dataLength: bytes, flags: kCMBlockBufferAssureMemoryNowFlag,
+            blockBufferOut: &block
+        ) == kCMBlockBufferNoErr, let block else { return nil }
+        var data: UnsafeMutablePointer<CChar>?
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: nil, dataPointerOut: &data)
+            == kCMBlockBufferNoErr, let data, let source = pcm.floatChannelData else { return nil }
+        data.withMemoryRebound(to: Float.self, capacity: frames * channels) { output in
+            var zero: Float = 0
+            for channel in 0 ..< channels {
+                // A strided copy: adding zero into every `channels`-th slot.
+                vDSP_vsadd(source[channel], 1, &zero, output + channel, vDSP_Stride(channels), vDSP_Length(frames))
+            }
         }
-        guard generation == self.generation else { return }
-        outstanding -= 1
-        fill()
+        var sample: CMSampleBuffer?
+        guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+            allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: description, sampleCount: frames,
+            presentationTimeStamp: CMTime(value: frame, timescale: CMTimeScale(pcm.format.sampleRate)),
+            packetDescriptions: nil, sampleBufferOut: &sample
+        ) == noErr else { return nil }
+        return sample
     }
 }

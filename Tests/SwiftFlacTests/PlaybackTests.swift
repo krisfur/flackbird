@@ -139,7 +139,7 @@ struct PlaybackTests {
     @Test func unplayableFilesSkipAheadThenStop() async throws {
         let store = try TestStore()
         let tracks = try (1 ... 3).map { try Track(url: store.file("\($0).flac", data: Data("not audio".utf8))) }
-        let player = PlayerController(transport: AudioEngineTransport(), defaults: store.defaults, systemIntegration: false,
+        let player = PlayerController(transport: AudioRendererTransport(), defaults: store.defaults, systemIntegration: false,
                                       activate: {}, metadataLoader: { _ in TrackMetadata() })
         player.play(tracks[0], in: tracks)
         try await eventually { !player.isPlaying }

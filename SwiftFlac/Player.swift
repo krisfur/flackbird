@@ -133,7 +133,7 @@ final class PlayerController {
         qualityLoader: @escaping @Sendable (URL) async -> AudioQuality? = AudioQuality.read,
         now: @escaping () -> Date = Date.init
     ) {
-        player = transport ?? AudioEngineTransport()
+        player = transport ?? AudioRendererTransport()
         self.defaults = defaults
         self.systemIntegration = systemIntegration
         self.metadataLoader = metadataLoader
@@ -145,6 +145,10 @@ final class PlayerController {
             .flatMap(RepeatMode.init(rawValue:)) ?? .off
         visualizerEnabled = defaults.object(forKey: Self.visualizerKey) as? Bool ?? true
         player.onEvent = { [weak self] event in self?.handle(event) }
+        spectrum.playbackPosition = { [weak self] in
+            guard let self, isPlaying else { return nil }
+            return player.currentTime
+        }
         guard systemIntegration else { return }
         configureRemoteCommands()
         publishPlaybackModes()

@@ -228,7 +228,7 @@ struct ToggleIcon: View {
 }
 
 /// Faint frequency bars. Analysis only runs while visible and playing; paused they
-/// rest at their minimum, and they hide when no audio reaches the tap (AirPlay).
+/// rest at their minimum, and they hide over AirPlay or with no audio to show.
 struct SpectrumBars: View {
     let monitor: SpectrumMonitor
     let isPlaying: Bool
@@ -238,20 +238,11 @@ struct SpectrumBars: View {
     /// TimelineView keeps ticking in the background otherwise, waking the CPU at 60 Hz.
     @Environment(\.scenePhase) private var scenePhase
 
-    /// The tap sees audio before the hardware plays it: a little on the speaker, ~200 ms over Bluetooth.
-    private static var outputLatency: TimeInterval {
-        #if os(iOS)
-            AVAudioSession.sharedInstance().outputLatency
-        #else
-            0
-        #endif
-    }
-
     var body: some View {
         let animating = isPlaying && scenePhase != .background
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !animating)) { timeline in
             let levels = animating
-                ? monitor.update(delay: Self.outputLatency, at: timeline.date)
+                ? monitor.update(at: timeline.date)
                 : [Float](repeating: 0, count: SpectrumMonitor.bandCount)
             let visible = !isAirPlaying && (!isPlaying || monitor.hasSignal)
             Canvas { context, size in

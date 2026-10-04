@@ -2,15 +2,16 @@ import Accelerate
 import AVFoundation
 import os
 
-/// Recent decoded audio, shared between the engine's tap and the UI.
+/// Decoded audio by position, written as it's fed to the renderer and read at the playback time.
+/// Kept at 48 kHz or below: hi-res keeps every 2nd or 4th sample, plenty for a display.
 final class SpectrumBuffer: @unchecked Sendable {
-    /// Room for the analysis window plus Bluetooth-sized output latency.
-    static let capacity = 32768
+    /// Covers the renderer's read-ahead: four seconds at 48 kHz.
+    static let capacity = 196_608
 
     private struct State {
-        var writeIndex = 0
+        /// Stored index just past the newest sample.
+        var end = 0
         var written = 0
-        var sequence: UInt64 = 0
         var sampleRate: Double = 0
     }
 
@@ -30,56 +31,57 @@ final class SpectrumBuffer: @unchecked Sendable {
         state.deallocate()
     }
 
-    /// `count` samples ending `delay` seconds before the newest, oldest first, plus a
-    /// counter that advances whenever audio arrives. Nil until enough audio has played.
-    func latest(_ count: Int, delay: TimeInterval = 0) -> (samples: [Float], sampleRate: Double, sequence: UInt64)? {
+    /// `count` samples ending at `time`, oldest first. Nil if that stretch isn't held.
+    func window(_ count: Int, endingAt time: TimeInterval) -> (samples: [Float], sampleRate: Double)? {
         os_unfair_lock_lock(lock)
         defer { os_unfair_lock_unlock(lock) }
         let current = state.pointee
-        guard current.sampleRate > 0, count > 0, current.written >= count else { return nil }
-        let offset = min(max(0, Int(delay * current.sampleRate)), current.written - count)
-        let start = ((current.writeIndex - offset - count) % Self.capacity + Self.capacity) % Self.capacity
-        let recent = (0 ..< count).map { samples[(start + $0) % Self.capacity] }
-        return (recent, current.sampleRate, current.sequence)
+        guard current.sampleRate > 0, count > 0, time.isFinite else { return nil }
+        let last = Int(time * current.sampleRate)
+        guard last <= current.end, last - count >= current.end - current.written else { return nil }
+        let recent = (last - count ..< last).map { samples[$0 % Self.capacity] }
+        return (recent, current.sampleRate)
     }
 
-    /// Forgets buffered audio, so a new track never shows the previous one's tail.
+    /// Forgets buffered audio, so a seek or new track never shows stale levels.
     func reset() {
         os_unfair_lock_lock(lock)
         defer { os_unfair_lock_unlock(lock) }
         state.pointee.written = 0
     }
 
-    /// From the engine's tap, off the audio thread: the first channel is enough for a display.
-    func write(_ buffer: AVAudioPCMBuffer) {
+    /// The first channel of `buffer`, which starts at track frame `frame`.
+    func write(_ buffer: AVAudioPCMBuffer, at frame: AVAudioFramePosition) {
         guard let data = buffer.floatChannelData else { return }
-        os_unfair_lock_lock(lock)
-        defer { os_unfair_lock_unlock(lock) }
-        state.pointee.sampleRate = buffer.format.sampleRate
-        appendLocked(data[0], count: Int(buffer.frameLength))
+        write(data[0], count: Int(buffer.frameLength), at: Int(frame), sampleRate: buffer.format.sampleRate)
     }
 
-    /// Caller holds the lock.
-    private func appendLocked(_ data: UnsafePointer<Float>, count: Int) {
-        var index = state.pointee.writeIndex
-        for frame in 0 ..< count {
-            samples[index] = data[frame]
-            index = (index + 1) % Self.capacity
-        }
-        state.pointee.writeIndex = index
-        state.pointee.written = min(state.pointee.written + count, Self.capacity)
-        state.pointee.sequence &+= UInt64(count)
-    }
-
-    /// Feeds mono samples as the tap would, for tests.
-    func append(_ mono: [Float], sampleRate: Double) {
-        os_unfair_lock_lock(lock)
-        defer { os_unfair_lock_unlock(lock) }
-        state.pointee.sampleRate = sampleRate
+    /// Mono samples starting at track frame `frame`.
+    func append(_ mono: [Float], sampleRate: Double, at frame: Int = 0) {
         mono.withUnsafeBufferPointer { pointer in
             guard let base = pointer.baseAddress else { return }
-            appendLocked(base, count: pointer.count)
+            write(base, count: pointer.count, at: frame, sampleRate: sampleRate)
         }
+    }
+
+    private func write(_ data: UnsafePointer<Float>, count: Int, at frame: Int, sampleRate: Double) {
+        let step = max(1, Int(sampleRate / 48000))
+        // Keep source frames that are multiples of `step`, so consecutive writes line up.
+        let first = (step - frame % step) % step
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+        let start = (frame + first) / step
+        if start != state.pointee.end || state.pointee.sampleRate != sampleRate / Double(step) {
+            state.pointee.written = 0
+            state.pointee.sampleRate = sampleRate / Double(step)
+        }
+        var index = start
+        for source in stride(from: first, to: count, by: step) {
+            samples[index % Self.capacity] = data[source]
+            index += 1
+        }
+        state.pointee.written = min(state.pointee.written + index - start, Self.capacity)
+        state.pointee.end = index
     }
 }
 
@@ -157,24 +159,23 @@ struct SpectrumAnalyzer {
 final class SpectrumMonitor {
     static let bandCount = 32
     let buffer = SpectrumBuffer()
+    /// The position being heard while playing, nil otherwise.
+    var playbackPosition: @MainActor () -> TimeInterval? = { nil }
     private let analyzer = SpectrumAnalyzer()
     private var smoothed = [Float](repeating: 0, count: bandCount)
-    private var lastSequence: UInt64?
-    private var staleFrames = 0
+    private var lastPosition: TimeInterval?
     private var lastUpdate: Date?
     private var silentSince: Date?
-    /// False once playback has gone 1.5 s with no audio reaching the tap, as over AirPlay;
-    /// a track change's short gap doesn't count.
+    /// False once playback has gone 1.5 s with no audio to show; a seek's short gap doesn't count.
     private(set) var hasSignal = true
 
     func reset() {
         buffer.reset()
-        lastSequence = nil
+        lastPosition = nil
     }
 
-    /// Called per frame while playing. `delay` holds the display back by the output latency
-    /// so bars line up with what is heard.
-    func update(delay: TimeInterval = 0, at date: Date = .now) -> [Float] {
+    /// Called per frame while playing: the window ending at the playback position.
+    func update(at date: Date = .now) -> [Float] {
         if let lastUpdate {
             let elapsed = date.timeIntervalSince(lastUpdate)
             // Another view already advanced this frame.
@@ -187,15 +188,15 @@ final class SpectrumMonitor {
             }
         }
         lastUpdate = date
+        let position = playbackPosition()
         var fresh: [Float]?
-        if let analyzer, let window = buffer.latest(SpectrumAnalyzer.windowLength, delay: delay) {
-            staleFrames = window.sequence == lastSequence ? staleFrames + 1 : 0
-            lastSequence = window.sequence
-            // Taps deliver roughly every 20 ms; much longer without audio means none is coming.
-            if staleFrames < 6 {
-                fresh = analyzer.levels(of: window.samples, sampleRate: window.sampleRate, bands: Self.bandCount)
-            }
+        // A position that stops moving means a stall: let the bars fall.
+        if let analyzer, let position, position != lastPosition,
+           let window = buffer.window(SpectrumAnalyzer.windowLength, endingAt: position)
+        {
+            fresh = analyzer.levels(of: window.samples, sampleRate: window.sampleRate, bands: Self.bandCount)
         }
+        lastPosition = position
         if let fresh {
             smoothed = zip(fresh, smoothed).map { max($0, $1 * 0.85) }
             silentSince = nil
