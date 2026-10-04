@@ -42,6 +42,15 @@ struct RendererTransportTests {
         #expect(events().count == 2)
     }
 
+    @Test(arguments: ["tagged.mp3", "lossless.m4a"])
+    func otherFormatsPlayToTheEnd(name: String) async throws {
+        let (transport, events) = transport()
+        try transport.load(fixture(name), at: 1.5)
+        try await eventually { events().count == 1 }
+        transport.play()
+        try await eventually { events().last == .finished }
+    }
+
     @Test func unreadableFilesFail() async throws {
         let (transport, events) = transport()
         let store = try TestStore()

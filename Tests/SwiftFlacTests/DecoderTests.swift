@@ -44,6 +44,19 @@ struct DecoderTests {
         #expect(try drain(decoder) == Array(all[4000...]))
     }
 
+    /// Every non-FLAC format the library scans goes through Core Audio; the fixtures are two-second tones.
+    @Test(arguments: ["tagged.mp3", "tagged.m4a", "lossless.m4a", "plain.aac", "plain.wav", "plain.aiff"])
+    func otherFormatsDecodeAndSeek(name: String) throws {
+        let decoder = try makeAudioDecoder(for: fixture(name))
+        #expect(decoder is CoreAudioDecoder)
+        let seconds = Double(decoder.length) / decoder.processingFormat.sampleRate
+        // Raw AAC and MP3 keep the encoder's priming and padding: 0.16-0.18 s at this 8 kHz rate.
+        #expect(seconds >= 2 && seconds < 2.2)
+        #expect(try Int64(drain(decoder).count) == decoder.length)
+        try decoder.seek(to: decoder.length / 2)
+        #expect(try Int64(drain(decoder).count) == decoder.length - decoder.length / 2)
+    }
+
     @Test func factoryPicksLibFlacAndFallsBack() throws {
         #expect(try makeAudioDecoder(for: fixture("sample.flac")) is FlacDecoder)
         #expect(try makeAudioDecoder(for: fixture("tagged.mp3")) is CoreAudioDecoder)
