@@ -6,7 +6,9 @@
 
 ![Swift](https://img.shields.io/badge/Swift-F05138?style=flat&logo=swift&logoColor=white)
 
-Formerly SwiftFlac; the repository and Xcode project keep that name.
+> Formerly SwiftFlac; the Xcode project keeps that name.
+
+Available on the [AppStore](https://apps.apple.com/gb/app/flackbird/id6817509520)!
 
 Minimalist local music player for iOS, iPadOS, and macOS. Built with `SwiftUI` and first-party Apple frameworks. Plays FLAC, MP3, M4A/AAC, ALAC, WAV, and AIFF.
 
