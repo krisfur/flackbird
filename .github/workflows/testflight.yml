@@ -2,23 +2,30 @@ name: TestFlight
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to upload
+        type: choice
+        options: [iOS, macOS]
+        default: iOS
 
 permissions:
   contents: read
 
 concurrency:
-  group: testflight
+  group: testflight-${{ inputs.platform }}
   cancel-in-progress: false
 
 jobs:
   upload:
-    name: Archive and upload
+    name: Archive and upload (${{ inputs.platform }})
     runs-on: xcode-27
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      PLATFORM: ${{ inputs.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,7 +55,7 @@ jobs:
           -project SwiftFlac.xcodeproj
           -scheme SwiftFlac
           -configuration Release
-          -destination 'generic/platform=iOS'
+          -destination "generic/platform=$PLATFORM"
           -archivePath "$RUNNER_TEMP/SwiftFlac.xcarchive"
           -allowProvisioningUpdates
           -authenticationKeyPath "$RUNNER_TEMP/asc_key.p8"
