@@ -112,6 +112,9 @@ struct PlaybackTests {
         try await eventually { player.duration == 120 }
         player.setRepeatMode(.one)
         player.trackFinished()
+        // The start already published 0, so the end goes out first or the reset is dropped.
+        #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 120)
+        #expect(player.isPlaying && transport.seeks.last == 0)
         // A progress tick racing the restart must not leave the lock screen at the end.
         player.updatePlaybackTime(119)
         transport.onEvent?(.ready)
