@@ -87,6 +87,8 @@ final class PlayerController {
     @ObservationIgnored private(set) var metadataTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     private var resumeAfterInterruption = false
+    /// No visible UI to update, so the progress timer stays off.
+    private var isBackgrounded = false
 
     private static let shuffleKey = "playerShuffle"
     private static let repeatKey = "playerRepeatMode"
@@ -229,7 +231,7 @@ final class PlayerController {
 
     /// Twice a second while playing, with slack so the system can batch the wakeups.
     private func startTimeUpdates() {
-        guard systemIntegration, timeUpdates == nil else { return }
+        guard systemIntegration, !isBackgrounded, timeUpdates == nil else { return }
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -244,6 +246,20 @@ final class PlayerController {
     private func stopTimeUpdates() {
         timeUpdates?.invalidate()
         timeUpdates = nil
+    }
+
+    func setBackgrounded(_ backgrounded: Bool) {
+        guard backgrounded != isBackgrounded else { return }
+        isBackgrounded = backgrounded
+        if currentTrack != nil {
+            currentTime = player.currentTime
+        }
+        if backgrounded {
+            stopTimeUpdates()
+            saveSessionTime()
+        } else if isPlaying {
+            startTimeUpdates()
+        }
     }
 
     func handleInterruption(began: Bool, shouldResume: Bool) {
@@ -378,7 +394,8 @@ final class PlayerController {
 
     func previous() {
         // Restart the current track unless we're right at its start.
-        if currentTime > 3 {
+        let elapsed = isBackgrounded ? player.currentTime : currentTime
+        if elapsed > 3 {
             seek(to: 0)
         } else {
             advance(by: -1)

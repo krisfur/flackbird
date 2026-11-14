@@ -119,6 +119,25 @@ struct PlaybackTests {
         #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 0)
     }
 
+    @Test func backgroundReadsTheTransportClock() async throws {
+        let store = try TestStore()
+        let transport = FakeTransport()
+        let player = testPlayer(store, transport: transport)
+        let tracks = testTracks(root: store.root)
+        player.play(tracks[1], in: tracks)
+        try await eventually { player.duration == 120 }
+        transport.currentTime = 10
+        player.setBackgrounded(true)
+        #expect(store.defaults.double(forKey: "sessionTime") == 10)
+        // No progress ticks in the background, so Previous asks the transport.
+        transport.currentTime = 20
+        player.previous()
+        #expect(player.currentTrack == tracks[1] && transport.seeks.last == 0)
+        transport.currentTime = 30
+        player.setBackgrounded(false)
+        #expect(player.currentTime == 30)
+    }
+
     @Test func scrubToEndOfLastTrackKeepsTimeUpdating() async throws {
         let store = try TestStore()
         let transport = FakeTransport()

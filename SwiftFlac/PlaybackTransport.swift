@@ -180,7 +180,7 @@ private final class Feeder: @unchecked Sendable {
 
     private static let secondsPerBuffer = 0.5
 
-    private let queue = DispatchQueue(label: "com.kfurman.SwiftFlac.decoder", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.kfurman.SwiftFlac.decoder", qos: .utility)
     private let renderer: AVSampleBufferAudioRenderer
     private let send: @Sendable (Event) -> Void
     private var decoder: (any AudioDecoder)?
