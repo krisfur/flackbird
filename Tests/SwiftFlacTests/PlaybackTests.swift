@@ -136,6 +136,10 @@ struct PlaybackTests {
         transport.currentTime = 30
         player.setBackgrounded(false)
         #expect(player.currentTime == 30)
+        // Termination saves the playing position.
+        transport.currentTime = 45
+        player.saveCurrentPosition()
+        #expect(store.defaults.double(forKey: "sessionTime") == 45)
     }
 
     @Test func scrubToEndOfLastTrackKeepsTimeUpdating() async throws {

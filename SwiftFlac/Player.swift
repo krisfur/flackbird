@@ -192,6 +192,12 @@ final class PlayerController {
                     self?.handleInterruption(began: type == .began, shouldResume: shouldResume)
                 }
             }
+            // Background playback has no periodic saves; usually sent on force-quit.
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.saveCurrentPosition() }
+            }
             updateAirPlayRoute()
             NotificationCenter.default.addObserver(
                 forName: AVAudioSession.routeChangeNotification,
@@ -251,15 +257,23 @@ final class PlayerController {
     func setBackgrounded(_ backgrounded: Bool) {
         guard backgrounded != isBackgrounded else { return }
         isBackgrounded = backgrounded
-        if currentTrack != nil {
-            currentTime = player.currentTime
-        }
         if backgrounded {
             stopTimeUpdates()
-            saveSessionTime()
-        } else if isPlaying {
-            startTimeUpdates()
+            saveCurrentPosition()
+        } else {
+            if currentTrack != nil {
+                currentTime = player.currentTime
+            }
+            if isPlaying {
+                startTimeUpdates()
+            }
         }
+    }
+
+    func saveCurrentPosition() {
+        guard currentTrack != nil else { return }
+        currentTime = player.currentTime
+        saveSessionTime()
     }
 
     func handleInterruption(began: Bool, shouldResume: Bool) {
