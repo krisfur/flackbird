@@ -215,6 +215,11 @@ final class PlayerController {
             self.duration = duration
             consecutiveFailures = 0
             updateNowPlayingInfo()
+        case .ready:
+            // Republish once a seek or repeat lands; the lock screen otherwise
+            // keeps extrapolating from where the old position left off.
+            currentTime = player.currentTime
+            updateNowPlayingInfo()
         case .failed:
             currentTrackFailed()
         case .finished:

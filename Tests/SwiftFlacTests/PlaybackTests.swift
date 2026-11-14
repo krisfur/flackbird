@@ -103,6 +103,22 @@ struct PlaybackTests {
         #expect(player.currentTime == 0 && transport.loads.last?.time == 0)
     }
 
+    @Test func repeatOneRepublishesTheResetOnceAudioIsReady() async throws {
+        let store = try TestStore()
+        let transport = FakeTransport()
+        let player = testPlayer(store, transport: transport)
+        let tracks = testTracks(root: store.root)
+        player.play(tracks[0], in: tracks)
+        try await eventually { player.duration == 120 }
+        player.setRepeatMode(.one)
+        player.trackFinished()
+        // A progress tick racing the restart must not leave the lock screen at the end.
+        player.updatePlaybackTime(119)
+        transport.onEvent?(.ready)
+        #expect(player.currentTime == 0)
+        #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 0)
+    }
+
     @Test func scrubToEndOfLastTrackKeepsTimeUpdating() async throws {
         let store = try TestStore()
         let transport = FakeTransport()
