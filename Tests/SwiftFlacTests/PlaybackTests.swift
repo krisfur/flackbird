@@ -112,14 +112,16 @@ struct PlaybackTests {
         try await eventually { player.duration == 120 }
         player.setRepeatMode(.one)
         player.trackFinished()
-        // The start already published 0, so the end goes out first or the reset is dropped.
+        // Stopped at the end first, so the lock screen re-anchors when playback restarts.
         #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 120)
+        #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 0)
         #expect(player.isPlaying && transport.seeks.last == 0)
         // A progress tick racing the restart must not leave the lock screen at the end.
         player.updatePlaybackTime(119)
         transport.onEvent?(.ready)
         #expect(player.currentTime == 0)
         #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 0)
+        #expect(player.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 1)
     }
 
     @Test func backgroundReadsTheTransportClock() async throws {

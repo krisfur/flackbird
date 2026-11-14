@@ -89,6 +89,8 @@ final class PlayerController {
     private var resumeAfterInterruption = false
     /// No visible UI to update, so the progress timer stays off.
     private var isBackgrounded = false
+    /// A repeat is refilling; the lock screen shows it stopped until `.ready`.
+    private var isRestarting = false
 
     private static let shuffleKey = "playerShuffle"
     private static let repeatKey = "playerRepeatMode"
@@ -226,6 +228,7 @@ final class PlayerController {
         case .ready:
             // Republish once a seek or repeat lands; the lock screen otherwise
             // keeps extrapolating from where the old position left off.
+            isRestarting = false
             currentTime = player.currentTime
             updateNowPlayingInfo()
         case .failed:
@@ -307,6 +310,7 @@ final class PlayerController {
         // Reflect the requested state immediately so Pause also works while
         // activation is pending. Audio starts only after activation succeeds.
         isPlaying = true
+        isRestarting = false
         playbackActivation.request { [weak self] in
             guard let self, isPlaying, token == loadToken else { return }
             player.play()
@@ -475,8 +479,9 @@ final class PlayerController {
                 resumePlayback()
                 return
             }
-            // The lock screen drops an update identical to the last one, which
-            // is 0 from the track's start: publish the end now, 0 on `.ready`.
+            // The lock screen only re-anchors its clock on a rate change, like a
+            // pause: publish stopped at the end now, playing from 0 on `.ready`.
+            isRestarting = true
             currentTime = duration
             updateNowPlayingInfo()
             // The transport still wants playback, so it resumes once refilled.
@@ -533,6 +538,7 @@ final class PlayerController {
         loadToken += 1
         let token = loadToken
         playbackActivation.cancel()
+        isRestarting = false
         spectrum.reset()
         currentTime = startTime
         duration = 0
@@ -634,7 +640,7 @@ final class PlayerController {
             MPMediaItemPropertyTitle: nowPlaying.title ?? track.displayTitle,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying && !isRestarting ? 1.0 : 0.0,
         ]
         if let artist = displayArtist {
             info[MPMediaItemPropertyArtist] = artist
