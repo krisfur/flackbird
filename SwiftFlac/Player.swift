@@ -469,9 +469,19 @@ final class PlayerController {
     func trackFinished() {
         if repeatMode == .one {
             guard currentTrack != nil else { return }
+            guard isPlaying else {
+                player.seek(to: 0)
+                currentTime = 0
+                resumePlayback()
+                return
+            }
+            // The lock screen drops an update identical to the last one, which
+            // is 0 from the track's start: publish the end now, 0 on `.ready`.
+            currentTime = duration
+            updateNowPlayingInfo()
+            // The transport still wants playback, so it resumes once refilled.
             player.seek(to: 0)
             currentTime = 0
-            resumePlayback()
         } else {
             advance(by: 1)
         }

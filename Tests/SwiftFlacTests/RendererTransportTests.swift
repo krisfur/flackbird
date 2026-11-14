@@ -41,6 +41,16 @@ struct RendererTransportTests {
         #expect(events().filter { $0 == .finished }.count == 1 && !events().contains(.failed))
     }
 
+    @Test func seekAfterTheEndResumesPlayback() async throws {
+        let (transport, events) = transport()
+        try transport.load(fixture("tagged.flac"), at: 1.5)
+        transport.play()
+        try await eventually { events().last == .finished }
+        // Repeat-one relies on this: no further play() needed.
+        transport.seek(to: 0)
+        try await eventually { transport.currentTime > 0.1 }
+    }
+
     @Test(arguments: ["tagged.mp3", "lossless.m4a"])
     func otherFormatsPlayToTheEnd(name: String) async throws {
         let (transport, events) = transport()
