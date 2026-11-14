@@ -1,0 +1,69 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Archive and upload
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Write App Store Connect key and export options
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc_key.p8"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key><string>app-store-connect</string>
+              <key>destination</key><string>upload</string>
+              <key>teamID</key><string>CL5J663XYM</string>
+              <key>signingStyle</key><string>automatic</string>
+              <key>manageAppVersionAndBuildNumber</key><true/>
+          </dict>
+          </plist>
+          EOF
+      # Cloud-managed signing via the API key, so no certificates live in the repo or secrets.
+      - name: Archive
+        run: >-
+          xcodebuild archive
+          -project SwiftFlac.xcodeproj
+          -scheme SwiftFlac
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -archivePath "$RUNNER_TEMP/SwiftFlac.xcarchive"
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/asc_key.p8"
+          -authenticationKeyID "$ASC_KEY_ID"
+          -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Export and upload to TestFlight
+        run: >-
+          xcodebuild -exportArchive
+          -archivePath "$RUNNER_TEMP/SwiftFlac.xcarchive"
+          -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          -exportPath "$RUNNER_TEMP/export"
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/asc_key.p8"
+          -authenticationKeyID "$ASC_KEY_ID"
+          -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Remove key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/asc_key.p8"

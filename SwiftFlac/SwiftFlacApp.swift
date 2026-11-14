@@ -37,6 +37,7 @@ struct SwiftFlacApp: App {
                 .defaultAppStorage(library.defaults)
         }
         .onChange(of: scenePhase) { _, phase in
+            player.setBackgrounded(phase == .background)
             if phase == .active {
                 library.refreshIfNeeded()
             }

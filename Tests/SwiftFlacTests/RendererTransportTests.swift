@@ -15,9 +15,8 @@ struct RendererTransportTests {
     @Test func loadsExactDurationAndSeeksWhilePaused() async throws {
         let (transport, events) = transport()
         try transport.load(fixture("sample.flac"), at: 1)
-        try await eventually { !events().isEmpty }
         // 238140 frames at 44.1 kHz, from STREAMINFO.
-        #expect(events() == [.loaded(duration: 238_140.0 / 44100)])
+        try await eventually { events() == [.loaded(duration: 238_140.0 / 44100), .ready] }
         #expect(transport.currentTime == 1)
         transport.seek(to: 2.5)
         #expect(transport.currentTime == 2.5)
@@ -31,7 +30,7 @@ struct RendererTransportTests {
         let spectrum = SpectrumBuffer()
         transport.spectrum = spectrum
         try transport.load(fixture("tagged.flac"), at: 0)
-        try await eventually { events().count == 1 }
+        try await eventually { events().contains(.ready) }
         transport.seek(to: 1.5)
         transport.play()
         try await eventually { transport.currentTime > 1.6 }
@@ -39,14 +38,14 @@ struct RendererTransportTests {
         try await eventually { events().last == .finished }
         #expect(transport.currentTime == 2)
         transport.pause()
-        #expect(events().count == 2)
+        #expect(events().filter { $0 == .finished }.count == 1 && !events().contains(.failed))
     }
 
     @Test(arguments: ["tagged.mp3", "lossless.m4a"])
     func otherFormatsPlayToTheEnd(name: String) async throws {
         let (transport, events) = transport()
         try transport.load(fixture(name), at: 1.5)
-        try await eventually { events().count == 1 }
+        try await eventually { events().contains(.ready) }
         transport.play()
         try await eventually { events().last == .finished }
     }

@@ -3,6 +3,8 @@ import AVFoundation
 
 enum PlaybackEvent: Equatable {
     case loaded(duration: TimeInterval)
+    /// Audio is buffered at the current position and the clock runs from there.
+    case ready
     case failed
     case finished
 }
@@ -135,6 +137,7 @@ final class AudioRendererTransport: PlaybackTransport {
             observeEnd(generation: generation)
             let start = CMTime(seconds: heldTime, preferredTimescale: CMTimeScale(sampleRate))
             synchronizer.setRate(wantsPlayback ? 1 : 0, time: start)
+            onEvent?(.ready)
         case let .failed(generation):
             guard generation == self.generation else { return }
             isPrimed = false
@@ -177,7 +180,7 @@ private final class Feeder: @unchecked Sendable {
 
     private static let secondsPerBuffer = 0.5
 
-    private let queue = DispatchQueue(label: "com.kfurman.SwiftFlac.decoder", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.kfurman.SwiftFlac.decoder", qos: .utility)
     private let renderer: AVSampleBufferAudioRenderer
     private let send: @Sendable (Event) -> Void
     private var decoder: (any AudioDecoder)?
